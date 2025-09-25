@@ -620,7 +620,7 @@ write.csv(gendercheck, file.path(sex.dir, "gendercheck_table.csv"))
 png(filename = file.path(sex.dir,"XIST_cpm.png"), width = 15, height = 12, unit = "cm", res = 1200)
 ggplot(data = gendercheck,
        aes(x = as.factor(Sex),
-           y = as.numeric(XIST),
+           y = as.numeric(XIST_cpm),
            fill = Sex)) + 
   theme_bw() + 
   geom_boxplot() +
@@ -634,7 +634,7 @@ dev.off()
 png(filename = file.path(sex.dir,"DDX3Y_cpm.png"), width = 15, height = 12, unit = "cm", res = 1200)
 ggplot(data = gendercheck,
        aes(x = as.factor(Sex),
-           y = as.numeric(DDX3Y),
+           y = as.numeric(DDX3Y_cpm),
            fill = Sex)) + 
   theme_bw() + 
   geom_boxplot()+

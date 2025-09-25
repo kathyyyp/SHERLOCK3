@@ -69,16 +69,21 @@ counts_biopt_merged <- readRDS(file.path(combat.processed.data.dir, "counts_biop
 counts_brush_combat <- readRDS(file.path(combat.processed.data.dir, "counts_brush_combat_raw.rds"))
 counts_biopt_combat <- readRDS(file.path(combat.processed.data.dir, "counts_biopt_combat_raw.rds"))
 
-clinical_brushbiopt <- readRDS(file.path(postQC.data.dir, "clinical_brushbiopt.rds"))
+clinical_brushbiopt <- readRDS(file.path(postQC.data.dir, "clinical_brushbiopt.rds")) #552 samples
 clinical_brush <- readRDS(file.path(postQC.data.dir, "clinical_brush.rds"))
 clinical_biopt <- readRDS(file.path(postQC.data.dir, "clinical_biopt.rds"))
 
 #Combine brush and biopt for first PCA
 counts_brushbiopt_merged <- as.matrix(cbind(counts_brush_merged, counts_biopt_merged))
+counts_brushbiopt_combat <- as.matrix(cbind(counts_brush_combat, counts_biopt_combat))
+saveRDS(counts_brushbiopt_combat, file.path(combat.processed.data.dir, "counts_brushbiopt_combat.rds"))
+write.csv(counts_brushbiopt_combat, file.path(combat.processed.data.dir, "counts_brushbiopt_combat.csv"))
 
 
 
 clinical_brushbiopt$batch <- as.factor(clinical_brushbiopt$batch)
+clinical_brush$batch <- as.factor(clinical_brush$batch)
+clinical_biopt$batch <- as.factor(clinical_biopt$batch)
 
 
 # ================================================================================== #
@@ -88,7 +93,7 @@ clinical_brushbiopt$batch <- as.factor(clinical_brushbiopt$batch)
 
 cat("Starting 2. PRINCIPLE COMPONENT ANALYSIS",format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
 
-pca_pipeline <- function(clinical_file, counts_file, directory_name, batch_sampletype_as_variable = FALSE){
+pca_pipeline <- function(clinical_file, counts_file, directory_name){
   cat("Starting 2. PRINCIPLE COMPONENT ANALYSIS - ", directory_name, format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
   
   
@@ -124,7 +129,9 @@ pca_pipeline <- function(clinical_file, counts_file, directory_name, batch_sampl
   cat("Starting Plot 1: Eigencorplot", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
   
   # main variables
-  clinical_numeric <- sapply(clinical[,c("sex",
+  clinical_numeric <- sapply(clinical[,c("batch",
+                                         "sampletype",
+                                         "sex",
                                          "smoking_status",
                                          "classification")],
                              function(col){
@@ -135,15 +142,11 @@ pca_pipeline <- function(clinical_file, counts_file, directory_name, batch_sampl
   clinical_numeric <- as.matrix(cbind(clinical_numeric, age = clinical$age))
   #batch
  
-  if(batch_sampletype_as_variable == TRUE){
-    clinical_numeric <- as.matrix(cbind(clinical_numeric, batch = clinical$sampletype))
-    clinical_numeric <- as.matrix(cbind(clinical_numeric, batch = clinical$batch))
-  }
+  if(length(unique(clinical_numeric[,"sampletype"])) == 1){
+    clinical_numeric <- clinical_numeric[,-which(colnames(clinical_numeric) == "sampletype")]
+    }
   
   row.names(clinical_numeric) <- row.names(clinical)
-  
-  
-  
   
   
   ## All genes
@@ -223,7 +226,7 @@ pca_pipeline <- function(clinical_file, counts_file, directory_name, batch_sampl
     library("viridis")
     
     # main variables
-    for (variable in c("smoking_status", "sex", "classification", "age", "sampletype")){
+    for (variable in c("smoking_status", "sex", "classification", "age", "sampletype", "batch")){
       ggsave(autoplot(pca_res,data=clinical, colour = variable)+ fontsize  + guides(color=guide_legend(variable)),
              file = file.path(this.dir,paste0("pca_",variable,".png")),
              width = 2300,
@@ -231,26 +234,12 @@ pca_pipeline <- function(clinical_file, counts_file, directory_name, batch_sampl
              units = "px")
     }
     
-    # batch
-    if(batch_sampletype_as_variable == TRUE){
-      
-      for (variable in c("batch", "sampletype")){
-        ggsave(autoplot(pca_res,data=clinical, colour = variable)+ fontsize  + guides(color=guide_legend(variable)),
-               file = file.path(this.dir,paste0("pca_",variable,".png")),
-               width = 2300,
-               height = 1500,
-               units = "px")
-        } #close loop
-      
-      ## labelled sampletype
-      ggsave(autoplot(pca_res,data=clinical, colour = "sampletype", label = TRUE)+ fontsize + guides(color=guide_legend("Sample Type")),
-             file =paste0(this.dir,"/pca_sampletype_labelled.png"),
-             width = 2200,
-             height = 1500,
-             units = "px")
-      
-    } #close if
-    
+    ## labelled sampletype
+    ggsave(autoplot(pca_res,data=clinical, colour = "sampletype", label = TRUE)+ fontsize + guides(color=guide_legend("Sample Type")),
+           file =paste0(this.dir,"/pca_sampletype_labelled.png"),
+           width = 2200,
+           height = 1500,
+           units = "px")
 
     
     
@@ -261,7 +250,7 @@ pca_pipeline <- function(clinical_file, counts_file, directory_name, batch_sampl
     # clinical_pca <- cbind(eigen.pca$rotated, clinical) #pca() does the same thing as prcomp()
     
     #main variables
-    for (i in c("smoking_status","sex", "classification")){
+    for (i in c("smoking_status", "sex", "classification", "sampletype", "batch")){
       png(filename = paste0(this.dir,"/pca_5/", i, ".png"), width = 26, height = 23, units = "cm", res = 1200)
       
       variable <- as.factor(clinical_pca[,i])
@@ -278,7 +267,7 @@ pca_pipeline <- function(clinical_file, counts_file, directory_name, batch_sampl
     }
     
     # Age - need to break age into categories
-    png(filename = paste0(this.dir,"/pca_5/Age.png"), width = 26, height = 23, units = "cm", res = 1200 )
+    png(filename = paste0(this.dir,"/pca_5/age.png"), width = 26, height = 23, units = "cm", res = 1200 )
     
     variable <- clinical_pca[,"age"]
     
@@ -303,25 +292,6 @@ pca_pipeline <- function(clinical_file, counts_file, directory_name, batch_sampl
     
     dev.off()
     
-    
-    # batch
-    if(batch_sampletype_as_variable == TRUE){
-      for (i in c("sampletype", "batch")){
-        png(filename = paste0(this.dir,"/pca_5/", i, ".png"), width = 26, height = 23, units = "cm", res = 1200)
-        
-        variable <- as.factor(clinical_pca[,i])
-        
-        pcaplot <- pairs(clinical_pca[,c(1:5)],
-                         pch = 19,
-                         cex = 0.75,
-                         oma=c(3,3,3,20),
-                         col = variable)
-        
-        par(xpd=TRUE)
-        legend("bottomright", fill = unique(variable), legend = c(levels(variable)), title = i)
-        dev.off()
-      }
-    }
     
   } #close loop
   
@@ -348,7 +318,8 @@ pca_pipeline <- function(clinical_file, counts_file, directory_name, batch_sampl
 ## clinical_biopt
 ## counts_biopt_combat
 
-pca_pipeline(clinical_file = clinical_brushbiopt, counts_file = counts_brushbiopt_merged, directory_name = "precombat_brushbiopt", batch_sampletype_as_variable = TRUE)
+pca_pipeline(clinical_file = clinical_brushbiopt, counts_file = counts_brushbiopt_merged, directory_name = "precombat_brushbiopt")
+pca_pipeline(clinical_file = clinical_brushbiopt, counts_file = counts_brushbiopt_combat, directory_name = "postcombat_brushbiopt")
 pca_pipeline(clinical_file = clinical_brush, counts_file = counts_brush_merged, directory_name = "brush_merged")
 pca_pipeline(clinical_file = clinical_biopt, counts_file = counts_biopt_merged, directory_name = "biopt_merged")
 pca_pipeline(clinical_file = clinical_brush, counts_file = counts_brush_combat, directory_name = "brush_combat")
@@ -357,135 +328,224 @@ pca_pipeline(clinical_file = clinical_biopt, counts_file = counts_biopt_combat, 
 
 
 
-cat("END OF THIS JOB", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+# ================================================================================== #
+# 3. CONVERT ENSEMBL ID TO HGNC SYMBOL =====================
+# ================================================================================== #
+cat("Starting 3. CONVERT ENSEMBL ID TO HGNC SYMBOL", Sys.time(), "\n")
+
+# ##### with gProfiler online ##### 36,239
+# hgnc_symbols_gprofiler <- read.csv("processed/gprofiler_hgnc.csv")
+# length(which(hgnc_symbols_gprofiler$converted_alias != "None"))
+#
+# ##### with syngo ##### 38,371
+# hgnc_symbols_syngo <- read.table("processed/target_symbols.txt")
+
+my_ensembl_gene_ids <- row.names(counts_brushbiopt_merged) #35,111 biomart
+#
+##### #with library(EnsDb.Hsapiens.v79) ##### 46,666
+hgnc_symbols_db <- ensembldb::select(EnsDb.Hsapiens.v79, keys= my_ensembl_gene_ids, keytype = "GENEID", columns = c("SYMBOL","GENEID"))
+row.names(hgnc_symbols_db) <- hgnc_symbols_db$GENEID
+
+n_occur <- data.frame(table(hgnc_symbols_db$SYMBOL)) #Get frequencies of each gene/hgnc_symbol
+n_occur[n_occur$Freq > 1,]
+
+saveRDS(hgnc_symbols_db, file.path(postQC.data.dir,"hgnc_symbols_db.rds"))
+write.csv(hgnc_symbols_db, file.path(postQC.data.dir,"hgnc_symbols_db.csv"))
 
 
 
-# # ================================================================================== #
-# # 5. CONVERT ENSEMBL ID TO HGNC SYMBOL =====================
-# # ================================================================================== #
-# cat("Starting 5. CONVERT ENSEMBL ID TO HGNC SYMBOL", Sys.time(), "\n")
+# ================================================================================== #
+# 4. PATIENT DEMOGRAPHICS (SHERLOCK 2 and 3 combined) ==============================
+# ================================================================================== #
+cat("Starting 4. PATIENT DEMOGRAPHICS (SHERLOCK 2 and 3 combined)", Sys.time(), "\n")
+
+# Patient demographics
+unique_patients_all <- clinical_brushbiopt[match(unique(clinical_brushbiopt$Study.ID), clinical_brushbiopt$Study.ID),]
+
+patient_demographics <- t(unique_patients_all %>% 
+                            mutate(packyears = as.numeric(as.character(packyears))) %>% 
+                            
+                            group_by(classification) %>% 
+                            
+                            summarise(
+                              
+                              #Total patients
+                              total_patients = n(),
+                              
+                              #sex
+                              male_patients = sum(sex == "Male"), 
+                              male_percentage = (male_patients / total_patients) * 100,
+                              sex = paste0(male_patients, "(", round(male_percentage, digits=3), ")"),
+                              
+                              #age
+                              mean_age = median(age),
+                              range_age =paste0(min(age, na.rm = T), "-", max(age, na.rm = T)),
+                              age = paste0(mean_age,"(",range_age, ")"),
+                              
+                              #Smoking status
+                              currentsmoker = sum(smoking_status == "Current.smoker"),
+                              smokerpercentage = currentsmoker/total_patients *100,
+                              smoke = paste0(currentsmoker, "(", round(smokerpercentage, digits = 3), ")"),
+                              
+                              #packyears
+                              median_packyears = median(packyears, na.rm = TRUE),
+                              range_packyears = paste0(min(packyears, na.rm = T), "-", max(packyears, na.rm = T)),
+                              packyears = paste0(median_packyears, "(", range_packyears, ")"),
+                              
+                              
+                              #FEV1
+                              median_FEV1_percent_pred =  median(FEV1_percent_pred, na.rm = T),
+                              range_postfev1percpred = paste0(round(min(FEV1_percent_pred, na.rm = T),digits=3), "-", round(max(FEV1_percent_pred, na.rm = T), digits = 3)),
+                              fev1 = paste0(round(median_FEV1_percent_pred, digits = 3), "(", range_postfev1percpred, ")"),
+                              
+                              #FEV/FVC
+                              median_postfev1fvcpercpred =  median(FEV1_FVC_post, na.rm = TRUE),
+                              range_postfev1fvcpercpred = paste0(round(min(FEV1_FVC_post, na.rm = T)), "-", round(max(FEV1_FVC_post, na.rm = T), digits = 3 )),
+                              fev_fvc = paste0(round(median_postfev1fvcpercpred, digits = 3), "(", range_postfev1fvcpercpred, ")"),
+                            )
+                          %>%
+                            dplyr::select(
+                              classification,
+                              total_patients,
+                              sex,
+                              age,
+                              smoke,
+                              packyears,
+                              fev1,
+                              fev_fvc
+                            )
+)
+
+colnames(patient_demographics) <- patient_demographics[1,]
+patient_demographics <- patient_demographics[-1,]
+patient_demographics <- rbind(as.numeric(table(clinical_brushbiopt$classification)),patient_demographics)
+
+row.names(patient_demographics) <- c(
+  "Samples, n",
+  "Patients, n",
+  "Sex Male, n (%)",
+  "Age, median (Range)",
+  "Current smoker, n (%)",
+  "Packyears, median (Range)",
+  "FEV1 % pred. (post-bronchodilater), median (Range)",
+  "FEV1/FVC % (post-bronchodilater), median (Range)"
+)
+
+write.csv(patient_demographics, file = file.path(qc.dir, "patient_demographics_postcombat.csv"))
+saveRDS(patient_demographics, file = file.path(qc.dir, "patient_demographics_postcombat.rds"))
+
+
+# ================================================================================== #
+# 5. QC - Library size, gene counts and sex check ==================================
+# ================================================================================== #
+cat("Starting 5.  QC - Library size, gene counts and sex check", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+
+## Library size: colsums/total reads per sample  ------------------------------------------------------------------------------
+colsums_persample=as.matrix(colSums(counts_brushbiopt_combat))
+write.csv(colsums_persample, file = file.path(qc.dir,"sk2sk3_colsums.csv"))
+# (lowest is 954,000)
+
+## Number of detected genes ------------------------------------------------------------------------------
+genes_per_sample = colSums(counts_brushbiopt_combat >0) # same as sapply(counts_brushbiopt_combat, function(x) sum(x >0)) 
+write.csv(genes_per_sample, file = file.path(qc.dir,"sk2sk3_colsums_genes_detec_per_sample.csv"))
+
+## Sex checks (this step is probably not useful?? sex checks were done for each batch seperately, as mixups would have happened per batch ------------------------------------------------------------------------------
+# cat("Starting sex check", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
 # 
-# # ##### with gProfiler online ##### 36,239
-# # hgnc_symbols_gprofiler <- read.csv("processed/gprofiler_hgnc.csv")
-# # length(which(hgnc_symbols_gprofiler$converted_alias != "None"))
-# # 
-# # ##### with syngo ##### 38,371
-# # hgnc_symbols_syngo <- read.table("processed/target_symbols.txt") 
+# sex.dir <- file.path(qc.dir, "sex", "s2k_sk3")
+# if(!exists(sex.dir)) dir.create(sex.dir, recursive = TRUE)
 # 
-# my_ensembl_gene_ids <- rownames(counts) #35,111 biomart
-# # 
-# ##### #with library(EnsDb.Hsapiens.v79) ##### 46,666
-# hgnc_symbols_db <- ensembldb::select(EnsDb.Hsapiens.v79, keys= my_ensembl_gene_ids, keytype = "GENEID", columns = c("SYMBOL","GENEID"))
-# row.names(hgnc_symbols_db) <- hgnc_symbols_db$GENEID
+# # male - DDX3Y (ENSG00000067048), XIST (ENSG00000229807)
+# # female - XIST
+# counts_cpm <- cpm(counts_brushbiopt_combat)
+# xist_counts <- counts_cpm["ENSG00000229807",] #XIST
+# ddx3y_counts <- counts_cpm["ENSG00000067048",] #DDX3Y
 # 
-# n_occur <- data.frame(table(hgnc_symbols_db$SYMBOL)) #Get frequencies of each gene/hgnc_symbol
-# n_occur[n_occur$Freq > 1,]
-# 
-# saveRDS(hgnc_symbols_db, file.path(this.processed.data.dir,"hgnc_symbols_db.rds"))
-# write.csv(hgnc_symbols_db, file.path(this.processed.data.dir,"hgnc_symbols_db.csv"))
-# 
-# 
-# 
-# # ================================================================================== #
-# # 5.1 PATIENT DEMOGRAPHICS AFTER OUTLIER REMOVAL ===================================
-# # ================================================================================== #
-# cat("Starting 5.1 PATIENT DEMOGRAPHICS AFTER OUTLIER REMOVAL", Sys.time(), "\n")
-# 
-# qc.dir <- file.path(output.dir, "qc")
-# if(!exists(qc.dir)) dir.create(qc.dir, recursive = TRUE)
-# 
-# 
-# processed.data.dir <- file.path(data.dir, "processed", "datawrangling_qc")
-# 
-# clinical <- readRDS(file.path(processed.data.dir,"clinical.rds"))
-# hgnc_symbols_db <- readRDS(file.path(processed.data.dir,"hgnc_symbols_db.rds"))
-# 
-# 
-# # Patient demographics
-# unique_patients <- clinical[duplicated(clinical$Study.ID),] #unique_patients <- clinical[!duplicated(clinical$Study.ID),] would also give us all the unique patients
-# unique_patients_all <- clinical[match(unique(clinical$Study.ID), clinical$Study.ID),]
-# 
-# 
-# unique_patients_all <- as.data.frame(unique_patients_all)
-# unique_patients_all$Packyears <- as.numeric(as.character(unique_patients_all$Packyears))
-# unique_patients_all$FEV1.P <- as.numeric(as.character(unique_patients_all$FEV1.P))
-# unique_patients_all$FEV1.FVC <- as.numeric(as.character(unique_patients_all$FEV1.FVC))
-# 
-# 
-# 
-# patient_demographics <- t(unique_patients_all %>% 
-#                             mutate(Packyears = as.numeric(as.character(Packyears))) %>% 
-#                             
-#                             group_by(Classification) %>% 
-#                             
-#                             summarise(
-#                               
-#                               #Total patients
-#                               total_patients = n(),
-#                               
-#                               #Sex
-#                               male_patients = sum(Sex == "Male"), 
-#                               male_percentage = (male_patients / total_patients) * 100,
-#                               sex = paste0(male_patients, "(", round(male_percentage, digits=3), ")"),
-#                               
-#                               #Age
-#                               mean_age = median(Age),
-#                               range_age =paste0(min(Age, na.rm = T), "-", max(Age, na.rm = T)),
-#                               age = paste0(mean_age,"(",range_age, ")"),
-#                               
-#                               #Smoking status
-#                               currentsmoker = sum(Smoking.status == "Current.smoker"),
-#                               smokerpercentage = currentsmoker/total_patients *100,
-#                               smoke = paste0(currentsmoker, "(", round(smokerpercentage, digits = 3), ")"),
-#                               
-#                               #Packyears
-#                               median_packyears = median(Packyears, na.rm = TRUE),
-#                               range_packyears = paste0(min(Packyears, na.rm = T), "-", max(Packyears, na.rm = T)),
-#                               packyears = paste0(median_packyears, "(", range_packyears, ")"),
-#                               
-#                               
-#                               #FEV1
-#                               median_FEV1_percent_pred =  median(FEV1.P, na.rm = T),
-#                               range_postfev1percpred = paste0(round(min(FEV1.P, na.rm = T),digits=3), "-", round(max(FEV1.P, na.rm = T), digits = 3)),
-#                               fev1 = paste0(round(median_FEV1_percent_pred, digits = 3), "(", range_postfev1percpred, ")"),
-#                               
-#                               #FEV/FVC
-#                               median_postfev1fvcpercpred =  median(FEV1.FVC, na.rm = TRUE),
-#                               range_postfev1fvcpercpred = paste0(round(min(FEV1.FVC, na.rm = T)), "-", round(max(FEV1.FVC, na.rm = T), digits = 3 )),
-#                               fev_fvc = paste0(round(median_postfev1fvcpercpred, digits = 3), "(", range_postfev1fvcpercpred, ")"),
-#                             )
-#                           %>%
-#                             dplyr::select(
-#                               Classification,
-#                               total_patients,
-#                               sex,
-#                               age,
-#                               smoke,
-#                               packyears,
-#                               fev1,
-#                               fev_fvc
-#                             )
-# )
-# 
-# colnames(patient_demographics) <- patient_demographics[1,]
-# patient_demographics <- patient_demographics[-1,]
-# patient_demographics <- rbind(as.numeric(table(clinical$Classification)),patient_demographics)
-# 
-# row.names(patient_demographics) <- c(
-#   "Samples, n",
-#   "Patients, n",
-#   "Sex Male, n (%)",
-#   "Age, median (Range)",
-#   "Current smoker, n (%)",
-#   "Packyears, median (Range)",
-#   "FEV1 % pred. (post-bronchodilater), median (Range)",
-#   "FEV1/FVC % (post-bronchodilater), median (Range)"
-# )
-# 
-# write.csv(patient_demographics, file = file.path(qc.dir, "patient_demographics_outliersremoved.csv"))
-# saveRDS(patient_demographics, file = file.path(qc.dir, "patient_demographics_outliersremoved.rds"))
+# ddx3y_samples <- colnames(counts_cpm)[counts_cpm["ENSG00000067048",] != 0]
+# clinical_brushbiopt[ddx3y_samples, "sex"]
 # 
 # 
-# cat("END OF THIS JOB", Sys.time(), "\n")
+# #Raw counts
+# gendercheck_counts <- as.data.frame(cbind(t(counts_brushbiopt_combat[c("ENSG00000229807","ENSG00000067048"),]), clinical_brushbiopt$sex))
+# colnames(gendercheck_counts) <- c("XIST", "DDX3Y", "Sex")
+# gendercheck_counts$Sample <- row.names(gendercheck_counts)
 # 
+# png(filename = file.path(sex.dir,"XIST_vs_DDX3Y_rawcounts.png"), width = 15, height = 12, unit = "cm", res = 1200)
+# ggplot(data = gendercheck_counts,
+#        aes(x = as.numeric(DDX3Y),
+#            y = as.numeric(XIST)
+#        )) + 
+#   theme_bw() + 
+#   geom_point(aes(color = Sex)) +
+#   # geom_text(aes(label = Sample), angle = 90, vjust = 0.5, hjust = -0.2, size = 0.8) +   # add labels
+#   ylab(lab = "XIST Counts") +
+#   xlab(lab = "DDX3Y Counts")+
+#   ggtitle("Sex Check")
+# 
+# dev.off()
+# 
+# 
+# #CPM
+# gendercheck_cpm <- as.data.frame(cbind(t(counts_cpm[c("ENSG00000229807","ENSG00000067048"),]), clinical_brushbiopt$sex))
+# colnames(gendercheck_cpm) <- c("XIST", "DDX3Y", "Sex")
+# gendercheck_cpm$Sample <- row.names(gendercheck_cpm)
+# 
+# png(filename = file.path(sex.dir,"XIST_vs_DDX3Y_cpm.png"), width = 15, height = 12, unit = "cm", res = 1200)
+# ggplot(data = gendercheck_cpm,
+#        aes(x = as.numeric(DDX3Y),
+#            y = as.numeric(XIST))) + 
+#   theme_bw() + 
+#   geom_point(aes(color = Sex)) +
+#   # geom_text(aes(label = Sample), angle = 90, vjust = 0.5, hjust = -0.2, size = 0.8) +   # add labels
+#   ylab(lab = "XIST CPM") +
+#   xlab(lab = "DDX3Y CPM")+
+#   ggtitle("Sex Check")
+# 
+# dev.off()
+# 
+# 
+# gendercheck <- merge(gendercheck_counts, gendercheck_cpm, by = "Sample")
+# gendercheck <- gendercheck[,-which(colnames(gendercheck) == "Sex.x")]
+# colnames(gendercheck) <- c("Sample", "XIST_count", "DDX3Y_count", "XIST_cpm", "DDX3Y_cpm", "Sex")
+# gendercheck <- gendercheck[order(gendercheck$DDX3Y_cpm, decreasing = TRUE),]
+# write.csv(gendercheck, file.path(sex.dir, "gendercheck_table.csv"))
+# 
+# # 107165-001-146 cpm = 3.13 rawcount = 58 DDX37
+# # 107165-001-184 cpm = 2.82 rawcount = 5 DDX3Y ? will not remove for now as raw count is low, cpm only high because total reads are low for the sample?
+# 
+# 
+# #XIST
+# png(filename = file.path(sex.dir,"XIST_cpm.png"), width = 15, height = 12, unit = "cm", res = 1200)
+# ggplot(data = gendercheck,
+#        aes(x = as.factor(Sex),
+#            y = as.numeric(XIST_cpm),
+#            fill = Sex)) + 
+#   theme_bw() + 
+#   geom_boxplot() +
+#   ylab(lab = "XIST CPM") +
+#   xlab(lab = "Sex")+
+#   ggtitle("XIST")
+# 
+# dev.off()
+# 
+# #DDX3Y
+# png(filename = file.path(sex.dir,"DDX3Y_cpm.png"), width = 15, height = 12, unit = "cm", res = 1200)
+# ggplot(data = gendercheck,
+#        aes(x = as.factor(Sex),
+#            y = as.numeric(DDX3Y_cpm),
+#            fill = Sex)) + 
+#   theme_bw() + 
+#   geom_boxplot()+
+#   # geom_dotplot(binaxis = "y",
+#   #              stackdir = "center",
+#   #              stackratio = 0.3,
+#   #              dotsize = 0.55) +
+#   ylab(lab = "DDX3Y CPM") +
+#   xlab(lab = "Sex") +
+#   ggtitle("DDX3Y")
+# dev.off()
+
+
+
+cat("END OF THIS JOB", Sys.time(), "\n")
+

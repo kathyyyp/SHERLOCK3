@@ -161,7 +161,7 @@ clinical_sherlock_master <- cbind(clinical_sherlock_master,
 
 #Subset for the patients in the combat counts file for brush and biopt
 clinical_brush_master <- clinical_sherlock_master[colnames(counts_brush_merged),] #274 patients (same as counts)
-clinical_biopt_master <- clinical_sherlock_master[colnames(counts_biopt_merged),] #279 patients (same as counts)
+clinical_biopt_master <- clinical_sherlock_master[colnames(counts_biopt_merged),] #278 patients (same as counts)
 
 #Combine brushes and biopsies (sherlock 2+3 master clinical file brush+biopt)
 clinical_brushbiopt_master <- as.data.frame(rbind(clinical_brush_master, clinical_biopt_master))
@@ -233,8 +233,8 @@ clinical_biopt <- clinical_brushbiopt[which(clinical_brushbiopt$sampletype == "B
 
 ## Save clinical_brushbiopt (main patient info, smoking, ics and lung function data)
 write.csv(clinical_brushbiopt, file.path(postQC.data.dir, "clinical_brushbiopt.csv"))
-saveRDS(clinical_brushbiopt, file.path(postQC.data.dir, "clinical_brushbiopt.rds"))
+saveRDS(clinical_brushbiopt, file.path(postQC.data.dir, "clinical_brushbiopt.rds")) #552 samples
 saveRDS(clinical_brush, file.path(postQC.data.dir, "clinical_brush.rds")) #274 samples
-saveRDS(clinical_biopt, file.path(postQC.data.dir, "clinical_biopt.rds")) #279 samples
+saveRDS(clinical_biopt, file.path(postQC.data.dir, "clinical_biopt.rds")) #278 samples
 
 cat("END OF THIS JOB", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
