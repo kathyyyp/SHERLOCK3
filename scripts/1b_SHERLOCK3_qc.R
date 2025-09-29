@@ -133,7 +133,9 @@ pca_pipeline <- function(clinical_file, counts_file, directory_name){
                                          "sampletype",
                                          "sex",
                                          "smoking_status",
-                                         "classification")],
+                                         "classification",
+                                         "packyears",
+                                         "ics_use")],
                              function(col){
                                as.numeric(as.factor(col))
                              }
@@ -226,12 +228,25 @@ pca_pipeline <- function(clinical_file, counts_file, directory_name){
     library("viridis")
     
     # main variables
-    for (variable in c("smoking_status", "sex", "classification", "age", "sampletype", "batch")){
+    for (variable in c("smoking_status", "sex", "classification", "sampletype", "batch", "ics_use")){
       ggsave(autoplot(pca_res,data=clinical, colour = variable)+ fontsize  + guides(color=guide_legend(variable)),
              file = file.path(this.dir,paste0("pca_",variable,".png")),
              width = 2300,
              height = 1500,
              units = "px")
+    }
+    
+    #age and packyears (colour gradient)
+    for (variable in c("age", "packyears")){
+
+    ggsave(
+      autoplot(pca_res, data = clinical, colour = variable) +  fontsize + guides(color=guide_legend(variable))+
+        scale_color_viridis_c(option = "plasma") ,
+      
+      file = file.path(this.dir,paste0("pca_",variable,".png")),
+      width = 2200,
+      height = 1500,
+      units = "px")
     }
     
     ## labelled sampletype
@@ -242,15 +257,17 @@ pca_pipeline <- function(clinical_file, counts_file, directory_name){
            units = "px")
 
     
+
+    
     
     ## Plot 4: Pairs plot (5 PCs) coloured by clinical variable ============================================================================================
-    cat("Starting Pairs plot (5 PCs) ", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+    cat("Starting Plot4: Pairs plot (5 PCs) ", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
     
     clinical_pca <- cbind(pca_res$x, clinical)
     # clinical_pca <- cbind(eigen.pca$rotated, clinical) #pca() does the same thing as prcomp()
     
     #main variables
-    for (i in c("smoking_status", "sex", "classification", "sampletype", "batch")){
+    for (i in c("smoking_status", "sex", "classification", "sampletype", "batch", "packyears", "ics_use")){
       png(filename = paste0(this.dir,"/pca_5/", i, ".png"), width = 26, height = 23, units = "cm", res = 1200)
       
       variable <- as.factor(clinical_pca[,i])
@@ -266,33 +283,64 @@ pca_pipeline <- function(clinical_file, counts_file, directory_name){
       dev.off()
     }
     
-    # Age - need to break age into categories
-    png(filename = paste0(this.dir,"/pca_5/age.png"), width = 26, height = 23, units = "cm", res = 1200 )
+    # Age - need to break into categories
+    png(filename = paste0(this.dir,"/pca_5/", "age", ".png"), width = 26, height = 23, units = "cm", res = 1200 )
     
     variable <- clinical_pca[,"age"]
     
-    colors <- colorRampPalette(c("yellow2", "purple"))(100)
+    colors <- colorRampPalette(c("#F0F921", "#FC8C3F", "#F8766D", "#C51B7D","#5E4FA2"))(100)
     
     pcaplot <- pairs(clinical_pca[,c(1:5)],
                      pch = 19,
                      cex = 0.75,
                      oma=c(3,3,3,20),
-                     col =  colors[as.numeric(cut(clinical_pca$age, breaks = 100))])
-    
-    breaks <- seq(min(clinical_pca$age), max(clinical_pca$age), length.out = 9)
+                     col =  colors[as.numeric(cut(clinical_pca[,"age"], breaks = 100))])
+      
+    breaks <- seq(min(clinical_pca[,"age"]), max(clinical_pca[,"age"]), length.out = 9)
     
     # Add custom color legend
     par(xpd=TRUE)
     
     legend("bottomright",
            legend = round(breaks, 1),
-           fill = colorRampPalette(c("yellow2", "purple"))(9),
-           title = "Age",
+           fill = colorRampPalette(c("#F0F921", "#FC8C3F", "#F8766D", "#C51B7D","#5E4FA2"))(9),
+           title = "age",
            border = "white")
     
     dev.off()
+
+    # packyears - need to break into categories
+    png(filename = paste0(this.dir,"/pca_5/", "packyears", ".png"), width = 26, height = 23, units = "cm", res = 1200 )
+    
+    variable <- clinical_pca[,"packyears"]
     
     
+    # Custom bins
+    breaks <- c(0, 10, 40, 60, 80, Inf)       
+    labels <- c("<10", "10-39", "40-59", "60-79", "80+")
+    
+    bins <- cut(variable, breaks = breaks, labels = labels, right = FALSE)
+    
+    colors <- c("#F0F921", "#FC8C3F", "#F8766D", "#C51B7D", "#5E4FA2")
+    cols <- colors[as.numeric(bins)]
+    
+    pcaplot <- pairs(clinical_pca[,c(1:5)],
+                     pch = 19,
+                     cex = 0.75,
+                     oma=c(3,3,3,20),
+                     col =  cols )
+    
+   
+    # Add custom color legend
+    par(xpd=TRUE)
+    
+    legend("bottomright",
+           legend = labels,
+           fill = colors,
+           title = "packyears",
+           border = "white")
+    
+    dev.off()
   } #close loop
   
 } #close function

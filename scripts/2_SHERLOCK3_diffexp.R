@@ -542,7 +542,7 @@ diffexp_edgeR <- function(this.diffexp.dir, showEnsemblID = FALSE) {
           scale_x_discrete(labels= c("Control" = "Control", "Mild.moderate.COPD" = "mCOPD", "Severe.COPD" = "sCOPD"))+
           scale_y_continuous(expand = c(0.07, 0, 0.07, 0)) +
           
-          labs(title = paste0(geneofinterest,": SHERLOCK2 - ", i)) +
+          labs(title = paste0(geneofinterest,": SHERLOCK2&3 - ", i)) +
           ylab (label = "Expression") +
           xlab (label = "Disease") +
           
