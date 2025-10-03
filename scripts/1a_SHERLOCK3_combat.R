@@ -11,7 +11,8 @@ options(error = function() { traceback(); quit(status = 1) })
 my_directory <- "/groups/umcg-griac/tmp02/projects/KathyPhung/SHERLOCK3"
 
 library("sva")
-
+library("readxl")
+library("stringr")
 
 # ================================================================================== #
 # B. SET UP DIRECTORY & OUTPUT PATHS ===============================================
@@ -44,59 +45,35 @@ cat("Starting 6. COMBAT-SEQ TO COMBINE SHERLOCK2 AND SHERLOCK3", format(Sys.time
 # NOTE: Combat needs counts in matrix class, not data frame
 
 #Load in SHERLOCK3 data #66,138 genes
-counts_sk3_brush <- readRDS(file.path(processed.data.dir, "datawrangling_qc_sk3_only", "counts_sk3_brush.rds")) #112 samples, 66138 genes
-counts_sk3_biopt <- readRDS(file.path(processed.data.dir, "datawrangling_qc_sk3_only", "counts_sk3_biopt.rds")) #113 samples, 66138 genes
+counts_sk3<- readRDS(file.path(processed.data.dir, "datawrangling_qc_sk3_only", "counts_sk3_postQC.rds")) #225 samples, 66138 genes
 
 
 #Load in SHERLOCK2 data #69,972 genes
-counts_sk2_brush <- readRDS(file.path(sherlock2.dir, "data", "processed", "datawrangling_qc", "counts_brush.rds")) #162 samples, 69972 genes
-counts_sk2_biopt <- readRDS(file.path(sherlock2.dir, "data", "processed", "datawrangling_qc", "counts_biopt.rds")) #165 samples, 69972 genes
+counts_sk2 <- readRDS(file.path(sherlock2.dir, "data", "processed", "datawrangling_qc", "counts.rds")) #327 samples, 69972 genes
 
-# ComBat_seq assumes main source of variation is technical. split by brush and biopsy first as combat may mistake the biological variation as batch effect = overcorrectio and loss of signal
-# Combat_seq preserves raw count format (takes raw counts as input)
-# Uses a negative binomial regression to model batch effects, then provide adjusted data by mapping the original data to an expected distribution if there were no batch effects.
-
-# Brush ComBat ================================================================================
-# Merge and keep matching Ensembl IDs between the two files 
-counts_brush_all <- merge(counts_sk2_brush, counts_sk3_brush, by = "row.names", all = TRUE) #all = TRUE will append all non matched rows in X and Y aswell,showing NA for the unmatched
-counts_brush_merged <- merge(counts_sk2_brush, counts_sk3_brush, by = "row.names") # 274 samples,  64489 genes
-row.names(counts_brush_merged) <- counts_brush_merged[,1]
-counts_brush_merged <- as.matrix(counts_brush_merged[,-1])
+# ComBat ================================================================================
+# Merge and keep matching Ensembl IDs between the two files
+counts_all <- merge(counts_sk2, counts_sk3, by = "row.names", all = TRUE) # all = TRUE will append all non matched rows in X and Y aswell,showing NA for the unmatched
+counts_merged <- merge(counts_sk2, counts_sk3, by = "row.names")
+row.names(counts_merged) <- counts_merged[,1]
+counts_merged <- as.matrix(counts_merged[,-1])
 
 combat.processed.data.dir <- file.path(data.dir, "processed", "datawrangling_qc", "combat_results")
 if(!exists(combat.processed.data.dir))dir.create(combat.processed.data.dir)
 
-write.csv(counts_brush_merged, file.path(combat.processed.data.dir, "counts_brush_merged_pre_combat.csv"))
-saveRDS(counts_brush_merged, file.path(combat.processed.data.dir, "counts_brush_merged_pre_combat.rds"))
+write.csv(counts_merged, file.path(combat.processed.data.dir, "counts_merged_pre_combat.csv")) #552 samples, 64489 genes
+saveRDS(counts_merged, file.path(combat.processed.data.dir, "counts_merged_pre_combat.rds"))
 
 #combat
-batch_brush <- c(rep(2, ncol(counts_sk2_brush)), rep(3, ncol(counts_sk3_brush)))
-counts_brush_combat <- ComBat_seq(counts_brush_merged, batch = batch_brush) #genes
+batch <- c(rep(2, ncol(counts_sk2)), rep(3, ncol(counts_sk3)))
+counts_combat <- ComBat_seq(counts_merged, batch = batch) #genes
 
-write.csv(counts_brush_combat, file.path(combat.processed.data.dir, "counts_brush_combat_raw.csv"))
-saveRDS(counts_brush_combat, file.path(combat.processed.data.dir, "counts_brush_combat_raw.rds"))
-
-#Biopt Combat ================================================================================
-# Merge and keep matching Ensembl IDs between the two files
-counts_biopt_all <- merge(counts_sk2_biopt, counts_sk3_biopt, by = "row.names", all = TRUE) #all = TRUE will append all non matched rows in X and Y aswell,showing NA for the unmatched
-counts_biopt_merged <- merge(counts_sk2_biopt, counts_sk3_biopt, by = "row.names") # 278 samples, 64489 genes
-row.names(counts_biopt_merged) <- counts_biopt_merged[,1]
-counts_biopt_merged <- as.matrix(counts_biopt_merged[,-1])
-
-write.csv(counts_biopt_merged, file.path(combat.processed.data.dir, "counts_biopt_merged_pre_combat.csv"))
-saveRDS(counts_biopt_merged, file.path(combat.processed.data.dir, "counts_biopt_merged_pre_combat.rds"))
-
-#combat
-batch_biopt <- c(rep(2, ncol(counts_sk2_biopt)), rep(3, ncol(counts_sk3_biopt)))
-counts_biopt_combat <- ComBat_seq(counts_biopt_merged, batch = batch_biopt) #genes
-
-write.csv(counts_biopt_combat, file.path(combat.processed.data.dir, "counts_biopt_combat_raw.csv"))
-saveRDS(counts_biopt_combat, file.path(combat.processed.data.dir, "counts_biopt_combat_raw.rds"))
+write.csv(counts_combat, file.path(combat.processed.data.dir, "counts_combat.csv")) #552 samples, 64489 genes
+saveRDS(counts_combat, file.path(combat.processed.data.dir, "counts_combat.rds"))
 
 
-
-
-
+#Note; specifying group = sampletype in combat_seq would mean that cmbat esitmates batch effects within each sampletype and remove the within-group batch effects 
+# but this would miss correcting for batch effects between sampletypes 
 
 
 
@@ -110,12 +87,10 @@ cat("Starting 7. Load in data again", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "
 combat.processed.data.dir <- file.path(postQC.data.dir, "combat_results")
 
 ##-- Pre batch correction
-counts_brush_merged <- readRDS(file.path(combat.processed.data.dir, "counts_brush_merged_pre_combat.rds"))
-counts_biopt_merged <- readRDS(file.path(combat.processed.data.dir, "counts_biopt_merged_pre_combat.rds"))
+counts_merged <- readRDS(file.path(combat.processed.data.dir, "counts_merged_pre_combat.rds"))
 
 ##-- Post batch correction
-counts_brush_combat <- readRDS(file.path(combat.processed.data.dir, "counts_brush_combat_raw.rds"))
-counts_biopt_combat <- readRDS(file.path(combat.processed.data.dir, "counts_biopt_combat_raw.rds"))
+counts_combat <- readRDS(file.path(combat.processed.data.dir, "counts_combat.rds"))
 
 ## CLINICAL -------------------------------------------------------------------------------------
 ## MASTER CLINICAL TABLE ##
@@ -159,34 +134,32 @@ clinical_sherlock_master <- cbind(clinical_sherlock_master,
                                             rep(3, nrow(clinical_sk3_master))
                                             ))
 
-#Subset for the patients in the combat counts file for brush and biopt
-clinical_brush_master <- clinical_sherlock_master[colnames(counts_brush_merged),] #274 patients (same as counts)
-clinical_biopt_master <- clinical_sherlock_master[colnames(counts_biopt_merged),] #278 patients (same as counts)
+#Subset for the patients in the combat counts file
+clinical_brushbiopt_master <- clinical_sherlock_master[colnames(counts_merged),]
 
-#Combine brushes and biopsies (sherlock 2+3 master clinical file brush+biopt)
-clinical_brushbiopt_master <- as.data.frame(rbind(clinical_brush_master, clinical_biopt_master))
-counts_brushbiopt_master <- as.data.frame(cbind(counts_brush_combat, counts_biopt_combat))
+clinical_brush_master <- clinical_brushbiopt_master[which(clinical_brushbiopt_master$sampletype == "Brush"),] 
+counts_brush_combat <- counts_combat[,row.names(clinical_brush_master)] #274 patients
+
+clinical_biopt_master <- clinical_brushbiopt_master[which(clinical_brushbiopt_master$sampletype == "Biopt"),] 
+counts_biopt_combat <- counts_combat[,row.names(clinical_biopt_master)] #278 patients 
+
 
 # Save files
 
 #Clinical file containing sherlock2+3 samples (brush + biopt)
-write.csv(counts_brushbiopt_master, file.path(postQC.data.dir, "master","counts_brushbiopt_master.csv"))
-saveRDS(counts_brushbiopt_master, file.path(postQC.data.dir,  "master","counts_brushbiopt_master.rds"))
-
+if(!exists(file.path(file.path(postQC.data.dir, "master")))) dir.create(file.path(postQC.data.dir, "master"))
 write.csv(clinical_brushbiopt_master, file.path(postQC.data.dir, "master","clinical_brushbiopt_master.csv"))
-saveRDS(clinical_brushbiopt_master, file.path(postQC.data.dir, "master", "clinical_brushbiopt_master.rds"))
+saveRDS(clinical_brushbiopt_master, file.path(postQC.data.dir,  "master","clinical_brushbiopt_master.rds"))
 
-#brush and biopt separated
-write.csv(clinical_brush_master, file.path(postQC.data.dir, "master", "clinical_brush_master.csv"))
-saveRDS(clinical_brush_master, file.path(postQC.data.dir, "master", "clinical_brush_master.rds"))
+saveRDS(clinical_brush_master, file.path(postQC.data.dir,  "master","clinical_brush_master.rds"))
+saveRDS(clinical_biopt_master, file.path(postQC.data.dir,  "master","clinical_biopt_master.rds"))
 
-write.csv(clinical_biopt_master, file.path(postQC.data.dir,"master", "clinical_biopt_master.csv"))
-saveRDS(clinical_biopt_master, file.path(postQC.data.dir, "master", "clinical_biopt_master.rds"))
-
+saveRDS(counts_brush_combat, file.path(combat.processed.data.dir, "counts_brush_combat.rds"))
+saveRDS(counts_biopt_combat, file.path(combat.processed.data.dir, "counts_biopt_combat.rds"))
 
 
 # ================================================================================== #
-# 8.1 Subset main clinical file ================================================
+# 8.1 Subset master clinical file for main variables ===============================
 # ================================================================================== #
 cat("Starting 8.1. Subset main clinical file", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
 
@@ -232,9 +205,10 @@ clinical_brush <- clinical_brushbiopt[which(clinical_brushbiopt$sampletype == "B
 clinical_biopt <- clinical_brushbiopt[which(clinical_brushbiopt$sampletype == "Biopt"),]
 
 ## Save clinical_brushbiopt (main patient info, smoking, ics and lung function data)
-write.csv(clinical_brushbiopt, file.path(postQC.data.dir, "clinical_brushbiopt.csv"))
-saveRDS(clinical_brushbiopt, file.path(postQC.data.dir, "clinical_brushbiopt.rds")) #552 samples
-saveRDS(clinical_brush, file.path(postQC.data.dir, "clinical_brush.rds")) #274 samples
-saveRDS(clinical_biopt, file.path(postQC.data.dir, "clinical_biopt.rds")) #278 samples
+write.csv(clinical_brushbiopt, file.path(postQC.data.dir, "clinical_brushbiopt_simple.csv"))
+saveRDS(clinical_brushbiopt, file.path(postQC.data.dir, "clinical_brushbiopt_simple.rds")) #552 samples
+
+saveRDS(clinical_brush, file.path(postQC.data.dir, "clinical_brush_simple.rds")) #274 samples
+saveRDS(clinical_biopt, file.path(postQC.data.dir, "clinical_biopt_simple.rds")) #278 samples
 
 cat("END OF THIS JOB", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")

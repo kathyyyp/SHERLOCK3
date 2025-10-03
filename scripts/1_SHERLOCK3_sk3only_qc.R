@@ -1,4 +1,4 @@
-# SHERLOCK3 - integration of new data with SHERLOCK2
+# SHERLOCK3 - QC on SHERLOCK3 data only
 options(error = function() { traceback(); quit(status = 1) })
 #options(error = ...) tells r to run the function
 #traceback()	prints the call stack (what functions were running in what order at the time of failure. traceback(2) means skip the top frame (the error handler itself).
@@ -45,8 +45,12 @@ if(!exists(processed.data.dir)) dir.create(processed.data.dir)
 output.dir <- file.path(main.dir,"output")
 if(!exists(output.dir)) dir.create(output.dir, recursive = TRUE)
 
-qc.dir <- file.path(output.dir, "qc")
-if(!exists(qc.dir)) dir.create(qc.dir, recursive = TRUE)
+qc.sk3.dir <- file.path(output.dir, "qc")
+if(!exists(qc.sk3.dir)) dir.create(qc.sk3.dir, recursive = TRUE)
+
+
+qc.sk3.dir <- file.path(qc.sk3.dir, "sk3_only")
+if(!exists(qc.sk3.dir)) dir.create(qc.sk3.dir, recursive = TRUE)
 
 #SHERLOCK2 dir
 sherlock2.dir <- "/groups/umcg-griac/tmp02/projects/KathyPhung/SHERLOCK2"
@@ -343,8 +347,8 @@ row.names(patient_demographics) <- c(
   "FEV1/FVC % (post-bronchodilater), median (Range)"
 )
 
-write.csv(patient_demographics, file = file.path(qc.dir, "patient_demographics_sk3_preQC.csv"))
-saveRDS(patient_demographics, file = file.path(qc.dir, "patient_demographics_sk3_preQC.rds"))
+write.csv(patient_demographics, file = file.path(qc.sk3.dir, "patient_demographics_sk3_preQC.csv"))
+saveRDS(patient_demographics, file = file.path(qc.sk3.dir, "patient_demographics_sk3_preQC.rds"))
 
 
 # ================================================================================== #
@@ -360,11 +364,11 @@ counts_sk3 <- readRDS(file.path(processed.data.dir, "counts_sk3_preQC.rds"))
 # ================================================================================== #
 cat("Starting 4.1 PRINCIPLE COMPONENT ANALYSIS",format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
 
-pca.dir <- file.path(qc.dir, "pca")
+pca.dir <- file.path(qc.sk3.dir, "pca")
 if(!exists(pca.dir)) dir.create(pca.dir, recursive = TRUE)
 if(!exists(file.path(pca.dir,"pca_5"))) dir.create(file.path(pca.dir,"pca_5"), recursive = TRUE)
 
-pca.top500.dir <- file.path(qc.dir, "pca_top500")
+pca.top500.dir <- file.path(qc.sk3.dir, "pca_top500")
 if(!exists(pca.top500.dir)) dir.create(pca.top500.dir)
 if(!exists(file.path(pca.top500.dir,"pca_5"))) dir.create(file.path(pca.top500.dir,"pca_5"), recursive = TRUE)
 
@@ -544,17 +548,17 @@ cat("Starting 5.  QC - Library size, gene counts and sex check", format(Sys.time
 
 ## Library size: colsums/total reads per sample  ------------------------------------------------------------------------------
 colsums_persample=as.matrix(colSums(counts_sk3))
-write.csv(colsums_persample, file = file.path(qc.dir,"colsums.csv"))
+write.csv(colsums_persample, file = file.path(qc.sk3.dir,"colsums.csv"))
 # (lowest is 954,000)
 
 ## Number of detected genes ------------------------------------------------------------------------------
 genes_per_sample = colSums(counts_sk3 >0) # same as sapply(counts_sk3, function(x) sum(x >0)) 
-write.csv(genes_per_sample, file = file.path(qc.dir,"colsums_genes_detec_per_sample.csv"))
+write.csv(genes_per_sample, file = file.path(qc.sk3.dir,"colsums_genes_detec_per_sample.csv"))
 
 ## Sex checks ------------------------------------------------------------------------------
 cat("Starting sex check", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
 
-sex.dir <- file.path(qc.dir, "sex")
+sex.dir <- file.path(qc.sk3.dir, "sex")
 if(!exists(sex.dir)) dir.create(sex.dir, recursive = TRUE)
 
 # male - DDX3Y (ENSG00000067048), XIST (ENSG00000229807)

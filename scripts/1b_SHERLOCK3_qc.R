@@ -62,28 +62,13 @@ setwd(file.path(main.dir))
 combat.processed.data.dir <- file.path(postQC.data.dir, "combat_results")
 
 # ##-- Pre batch correction
-counts_brush_merged <- readRDS(file.path(combat.processed.data.dir, "counts_brush_merged_pre_combat.rds"))
-counts_biopt_merged <- readRDS(file.path(combat.processed.data.dir, "counts_biopt_merged_pre_combat.rds"))
+counts_merged <- readRDS(file.path(combat.processed.data.dir, "counts_merged_pre_combat.rds"))
 
 # ##-- Post batch correction
-counts_brush_combat <- readRDS(file.path(combat.processed.data.dir, "counts_brush_combat_raw.rds"))
-counts_biopt_combat <- readRDS(file.path(combat.processed.data.dir, "counts_biopt_combat_raw.rds"))
+counts_combat <- readRDS(file.path(combat.processed.data.dir, "counts_combat.rds"))
 
-clinical_brushbiopt <- readRDS(file.path(postQC.data.dir, "clinical_brushbiopt.rds")) #552 samples
-clinical_brush <- readRDS(file.path(postQC.data.dir, "clinical_brush.rds"))
-clinical_biopt <- readRDS(file.path(postQC.data.dir, "clinical_biopt.rds"))
-
-#Combine brush and biopt for first PCA
-counts_brushbiopt_merged <- as.matrix(cbind(counts_brush_merged, counts_biopt_merged))
-counts_brushbiopt_combat <- as.matrix(cbind(counts_brush_combat, counts_biopt_combat))
-saveRDS(counts_brushbiopt_combat, file.path(combat.processed.data.dir, "counts_brushbiopt_combat.rds"))
-write.csv(counts_brushbiopt_combat, file.path(combat.processed.data.dir, "counts_brushbiopt_combat.csv"))
-
-
-
+clinical_brushbiopt <- readRDS(file.path(postQC.data.dir, "clinical_brushbiopt_simple.rds")) #552 samples
 clinical_brushbiopt$batch <- as.factor(clinical_brushbiopt$batch)
-clinical_brush$batch <- as.factor(clinical_brush$batch)
-clinical_biopt$batch <- as.factor(clinical_biopt$batch)
 
 
 # ================================================================================== #
@@ -128,6 +113,7 @@ pca_pipeline <- function(clinical_file, counts_file, directory_name){
   ## Plot 1: EIGENCORPLOT -----------------------------------------------
   cat("Starting Plot 1: Eigencorplot", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
   
+  ## Note!!! The eigencorplots don't save when run in the loop?? But work when run manually
   # main variables
   clinical_numeric <- sapply(clinical[,c("batch",
                                          "sampletype",
@@ -346,34 +332,10 @@ pca_pipeline <- function(clinical_file, counts_file, directory_name){
 } #close function
 
 
-# PCA on the pre-batch corrected data brush + biopt to show the sampletype split
-## clinical = clinical_brushbiopt
-## counts = counts_brushbiopt_merged
+# PCA on the pre- and post-batch corrected data
 
-# PCA on merged data - brush
-## clinical_brush
-## counts_brush_merged
-
-# PCA on merged data - biopt
-## clinical_biopt
-## counts_biopt_merged
-
-# PCA on combat data - brush
-## clinical_brush
-## counts_brush_combat
-
-# PCA on combat data - biopt
-## clinical_biopt
-## counts_biopt_combat
-
-pca_pipeline(clinical_file = clinical_brushbiopt, counts_file = counts_brushbiopt_merged, directory_name = "precombat_brushbiopt")
-pca_pipeline(clinical_file = clinical_brushbiopt, counts_file = counts_brushbiopt_combat, directory_name = "postcombat_brushbiopt")
-pca_pipeline(clinical_file = clinical_brush, counts_file = counts_brush_merged, directory_name = "brush_merged")
-pca_pipeline(clinical_file = clinical_biopt, counts_file = counts_biopt_merged, directory_name = "biopt_merged")
-pca_pipeline(clinical_file = clinical_brush, counts_file = counts_brush_combat, directory_name = "brush_combat")
-pca_pipeline(clinical_file = clinical_biopt, counts_file = counts_biopt_combat, directory_name = "biopt_combat")
-
-
+pca_pipeline(clinical_file = clinical_brushbiopt, counts_file = counts_merged, directory_name = "precombat_brushbiopt")
+pca_pipeline(clinical_file = clinical_brushbiopt, counts_file = counts_combat, directory_name = "postcombat_brushbiopt")
 
 
 # ================================================================================== #
@@ -381,15 +343,8 @@ pca_pipeline(clinical_file = clinical_biopt, counts_file = counts_biopt_combat, 
 # ================================================================================== #
 cat("Starting 3. CONVERT ENSEMBL ID TO HGNC SYMBOL", Sys.time(), "\n")
 
-# ##### with gProfiler online ##### 36,239
-# hgnc_symbols_gprofiler <- read.csv("processed/gprofiler_hgnc.csv")
-# length(which(hgnc_symbols_gprofiler$converted_alias != "None"))
-#
-# ##### with syngo ##### 38,371
-# hgnc_symbols_syngo <- read.table("processed/target_symbols.txt")
+my_ensembl_gene_ids <- row.names(counts_merged) #35,111 biomart
 
-my_ensembl_gene_ids <- row.names(counts_brushbiopt_merged) #35,111 biomart
-#
 ##### #with library(EnsDb.Hsapiens.v79) ##### 46,666
 hgnc_symbols_db <- ensembldb::select(EnsDb.Hsapiens.v79, keys= my_ensembl_gene_ids, keytype = "GENEID", columns = c("SYMBOL","GENEID"))
 row.names(hgnc_symbols_db) <- hgnc_symbols_db$GENEID
@@ -489,110 +444,15 @@ saveRDS(patient_demographics, file = file.path(qc.dir, "patient_demographics_pos
 cat("Starting 5.  QC - Library size, gene counts and sex check", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
 
 ## Library size: colsums/total reads per sample  ------------------------------------------------------------------------------
-colsums_persample=as.matrix(colSums(counts_brushbiopt_combat))
+colsums_persample=as.matrix(colSums(counts_combat))
 write.csv(colsums_persample, file = file.path(qc.dir,"sk2sk3_colsums.csv"))
-# (lowest is 954,000)
+# (lowest is 574,835)
 
 ## Number of detected genes ------------------------------------------------------------------------------
-genes_per_sample = colSums(counts_brushbiopt_combat >0) # same as sapply(counts_brushbiopt_combat, function(x) sum(x >0)) 
+genes_per_sample = colSums(counts_combat >0) # same as sapply(counts_brushbiopt_combat, function(x) sum(x >0)) 
 write.csv(genes_per_sample, file = file.path(qc.dir,"sk2sk3_colsums_genes_detec_per_sample.csv"))
-
+#lowest was 17,585
 ## Sex checks (this step is probably not useful?? sex checks were done for each batch seperately, as mixups would have happened per batch ------------------------------------------------------------------------------
-# cat("Starting sex check", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
-# 
-# sex.dir <- file.path(qc.dir, "sex", "s2k_sk3")
-# if(!exists(sex.dir)) dir.create(sex.dir, recursive = TRUE)
-# 
-# # male - DDX3Y (ENSG00000067048), XIST (ENSG00000229807)
-# # female - XIST
-# counts_cpm <- cpm(counts_brushbiopt_combat)
-# xist_counts <- counts_cpm["ENSG00000229807",] #XIST
-# ddx3y_counts <- counts_cpm["ENSG00000067048",] #DDX3Y
-# 
-# ddx3y_samples <- colnames(counts_cpm)[counts_cpm["ENSG00000067048",] != 0]
-# clinical_brushbiopt[ddx3y_samples, "sex"]
-# 
-# 
-# #Raw counts
-# gendercheck_counts <- as.data.frame(cbind(t(counts_brushbiopt_combat[c("ENSG00000229807","ENSG00000067048"),]), clinical_brushbiopt$sex))
-# colnames(gendercheck_counts) <- c("XIST", "DDX3Y", "Sex")
-# gendercheck_counts$Sample <- row.names(gendercheck_counts)
-# 
-# png(filename = file.path(sex.dir,"XIST_vs_DDX3Y_rawcounts.png"), width = 15, height = 12, unit = "cm", res = 1200)
-# ggplot(data = gendercheck_counts,
-#        aes(x = as.numeric(DDX3Y),
-#            y = as.numeric(XIST)
-#        )) + 
-#   theme_bw() + 
-#   geom_point(aes(color = Sex)) +
-#   # geom_text(aes(label = Sample), angle = 90, vjust = 0.5, hjust = -0.2, size = 0.8) +   # add labels
-#   ylab(lab = "XIST Counts") +
-#   xlab(lab = "DDX3Y Counts")+
-#   ggtitle("Sex Check")
-# 
-# dev.off()
-# 
-# 
-# #CPM
-# gendercheck_cpm <- as.data.frame(cbind(t(counts_cpm[c("ENSG00000229807","ENSG00000067048"),]), clinical_brushbiopt$sex))
-# colnames(gendercheck_cpm) <- c("XIST", "DDX3Y", "Sex")
-# gendercheck_cpm$Sample <- row.names(gendercheck_cpm)
-# 
-# png(filename = file.path(sex.dir,"XIST_vs_DDX3Y_cpm.png"), width = 15, height = 12, unit = "cm", res = 1200)
-# ggplot(data = gendercheck_cpm,
-#        aes(x = as.numeric(DDX3Y),
-#            y = as.numeric(XIST))) + 
-#   theme_bw() + 
-#   geom_point(aes(color = Sex)) +
-#   # geom_text(aes(label = Sample), angle = 90, vjust = 0.5, hjust = -0.2, size = 0.8) +   # add labels
-#   ylab(lab = "XIST CPM") +
-#   xlab(lab = "DDX3Y CPM")+
-#   ggtitle("Sex Check")
-# 
-# dev.off()
-# 
-# 
-# gendercheck <- merge(gendercheck_counts, gendercheck_cpm, by = "Sample")
-# gendercheck <- gendercheck[,-which(colnames(gendercheck) == "Sex.x")]
-# colnames(gendercheck) <- c("Sample", "XIST_count", "DDX3Y_count", "XIST_cpm", "DDX3Y_cpm", "Sex")
-# gendercheck <- gendercheck[order(gendercheck$DDX3Y_cpm, decreasing = TRUE),]
-# write.csv(gendercheck, file.path(sex.dir, "gendercheck_table.csv"))
-# 
-# # 107165-001-146 cpm = 3.13 rawcount = 58 DDX37
-# # 107165-001-184 cpm = 2.82 rawcount = 5 DDX3Y ? will not remove for now as raw count is low, cpm only high because total reads are low for the sample?
-# 
-# 
-# #XIST
-# png(filename = file.path(sex.dir,"XIST_cpm.png"), width = 15, height = 12, unit = "cm", res = 1200)
-# ggplot(data = gendercheck,
-#        aes(x = as.factor(Sex),
-#            y = as.numeric(XIST_cpm),
-#            fill = Sex)) + 
-#   theme_bw() + 
-#   geom_boxplot() +
-#   ylab(lab = "XIST CPM") +
-#   xlab(lab = "Sex")+
-#   ggtitle("XIST")
-# 
-# dev.off()
-# 
-# #DDX3Y
-# png(filename = file.path(sex.dir,"DDX3Y_cpm.png"), width = 15, height = 12, unit = "cm", res = 1200)
-# ggplot(data = gendercheck,
-#        aes(x = as.factor(Sex),
-#            y = as.numeric(DDX3Y_cpm),
-#            fill = Sex)) + 
-#   theme_bw() + 
-#   geom_boxplot()+
-#   # geom_dotplot(binaxis = "y",
-#   #              stackdir = "center",
-#   #              stackratio = 0.3,
-#   #              dotsize = 0.55) +
-#   ylab(lab = "DDX3Y CPM") +
-#   xlab(lab = "Sex") +
-#   ggtitle("DDX3Y")
-# dev.off()
-
 
 
 cat("END OF THIS JOB", Sys.time(), "\n")

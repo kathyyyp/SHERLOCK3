@@ -1,4 +1,4 @@
-# SHERLOCK3 - QC on merged SHERLOCK2&3 data and batch corrected with Combat_seq 
+# SHERLOCK3 - Differential Expression
 options(error = function() { traceback(); quit(status = 1) })
 #options(error = ...) tells r to run the function
 #traceback()	prints the call stack (what functions were running in what order at the time of failure. traceback(2) means skip the top frame (the error handler itself).
@@ -52,13 +52,13 @@ setwd(file.path(main.dir))
 
 
 # ##-- Post batch correction
-counts <- readRDS(file.path(combat.processed.data.dir, "counts_brushbiopt_combat.rds"))
-counts_brush <- readRDS(file.path(combat.processed.data.dir, "counts_brush_combat_raw.rds"))
-counts_biopt <- readRDS(file.path(combat.processed.data.dir, "counts_biopt_combat_raw.rds"))
+counts <- readRDS(file.path(combat.processed.data.dir, "counts_combat.rds"))
+counts_brush <- readRDS(file.path(combat.processed.data.dir, "counts_brush_combat.rds"))
+counts_biopt <- readRDS(file.path(combat.processed.data.dir, "counts_biopt_combat.rds"))
 
-clinical<- readRDS(file.path(postQC.data.dir, "clinical_brushbiopt.rds")) #552 samples
-clinical_brush <- readRDS(file.path(postQC.data.dir, "clinical_brush.rds"))
-clinical_biopt <- readRDS(file.path(postQC.data.dir, "clinical_biopt.rds"))
+clinical<- readRDS(file.path(postQC.data.dir, "clinical_brushbiopt_simple.rds")) #552 samples
+clinical_brush <- readRDS(file.path(postQC.data.dir, "clinical_brush_simple.rds"))
+clinical_biopt <- readRDS(file.path(postQC.data.dir, "clinical_biopt_simple.rds"))
 
 hgnc_symbols_db <- readRDS(file.path(postQC.data.dir,"hgnc_symbols_db.rds"))
 
@@ -302,7 +302,7 @@ diffexp_edgeR <- function(this.diffexp.dir, showEnsemblID = FALSE) {
   volcano.dir <- file.path(diffexp.figures.dir, "volcano")
   if(!exists(volcano.dir)) dir.create(volcano.dir, recursive = TRUE)
   
-  #Below code doesn't work in hpc when run as a job, but works in interactive if listofresults is loaded manually and the code is run. must be issue with function
+  #NOTE!!!!Below code doesn't work in hpc when run as a job, but works in interactive if listofresults is loaded manually with readRDS and the code is run???
   pdf(file= file.path(volcano.dir, "volcano_plots_hpc.pdf"), width = 8, height = 8)
   
   #### Biopt Control vs Brush COntrol --------------------------------------------------------------------------------------
