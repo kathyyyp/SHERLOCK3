@@ -444,14 +444,18 @@ saveRDS(patient_demographics, file = file.path(qc.dir, "patient_demographics_pos
 cat("Starting 5.  QC - Library size, gene counts and sex check", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
 
 ## Library size: colsums/total reads per sample  ------------------------------------------------------------------------------
-colsums_persample=as.matrix(colSums(counts_combat))
+colsums_persample=cbind(precombat = colSums(counts_merged_sk3), 
+                        postcombat = colSums(counts_combat_sk3))
 write.csv(colsums_persample, file = file.path(qc.dir,"sk2sk3_colsums.csv"))
-# (lowest is 574,835)
+# (lowest is 561,603 for precombat, 574,835 for postcombat)
 
 ## Number of detected genes ------------------------------------------------------------------------------
-genes_per_sample = colSums(counts_combat >0) # same as sapply(counts_brushbiopt_combat, function(x) sum(x >0)) 
+genes_per_sample = cbind(precombat = colSums(counts_merged_sk3 >0), 
+                         postcombat = colSums(counts_combat_sk3 >0)) # same as sapply(counts_brushbiopt_combat, function(x) sum(x >0)) 
 write.csv(genes_per_sample, file = file.path(qc.dir,"sk2sk3_colsums_genes_detec_per_sample.csv"))
-#lowest was 17,585
+#lowest was 17,585 for both pre and post combat
+
+
 ## Sex checks (this step is probably not useful?? sex checks were done for each batch seperately, as mixups would have happened per batch ------------------------------------------------------------------------------
 
 
