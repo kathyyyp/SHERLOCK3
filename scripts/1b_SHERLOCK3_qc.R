@@ -459,5 +459,186 @@ write.csv(genes_per_sample, file = file.path(qc.dir,"sk2sk3_colsums_genes_detec_
 ## Sex checks (this step is probably not useful?? sex checks were done for each batch seperately, as mixups would have happened per batch ------------------------------------------------------------------------------
 
 
-cat("END OF THIS JOB", Sys.time(), "\n")
+# ================================================================================== #
+## 5a. Patients with repeat samples - Library size, gene counts ====================
+# ================================================================================== #
+### Checking for dup patients ----------------------------------------------
+# Patient demographics table shows more counts than patients
 
+# sherlock1 (brush) --------------------------------------------
+sherlock1.processed.dir <-file.path(processed.data.dir, "SHERLOCK1")
+clinical_sk1_master <- readRDS(file.path(sherlock1.processed.dir,"clinical_sk1_master.rds"))
+counts_sk1 <- readRDS(file.path(sherlock1.processed.dir,"counts_sk1.rds"))
+
+dup_rows <- clinical_sk1_master[clinical_sk1_master$Study.ID %in% 
+                             clinical_sk1_master$Study.ID[duplicated(clinical_sk1_master$Study.ID)], ]
+
+write.csv(dup_rows, file.path(qc.dir, "duplicated_patients_sk1.csv"))
+
+# view first 10 counts to check that the counts are different in these samples
+dup_rows_counts <- counts_sk1[1:10,row.names(dup_rows)]
+write.csv(dup_rows_counts, file.path(qc.dir, "duplicated_patients_sk1_first10counts.csv"))
+
+# Library size and gene counts
+dge <- DGEList(counts = counts_sk1)
+cpm_mat <- cpm(dge, log = FALSE)
+  
+subset = counts_sk1[,row.names(dup_rows)]
+cpm_mat <- cpm_mat[,colnames(subset)]
+  
+qc_df <- data.frame(
+  patient = clinical_sk1_master[colnames(subset), "Study.ID"],
+  batch = 1,
+  sample = colnames(subset),
+  lib_size = colSums(subset),
+  detected_genes = colSums(cpm_mat > 1),
+  prop_zero = colSums(subset == 0) / nrow(subset)
+)
+
+
+
+cor(log2(subset[, 1] + 1), log2(subset[, 2] + 1), method = "pearson")
+# [1] 0.9790287
+
+
+dup_cor <- qc_df %>%
+  group_by(patient) %>%
+  summarise(
+    sample1 = sample[1],
+    sample2 = sample[2],
+    pearson = cor(log2(subset[, sample[1]] + 1),
+                  log2(subset[, sample[2]] + 1),
+                  method = "pearson"),
+    spearman = cor(log2(subset[, sample[1]] + 1),
+                   log2(subset[, sample[2]] + 1),
+                   method = "spearman")
+  )
+
+qc_summary <- qc_df %>%
+  left_join(dup_cor[,c("patient", "pearson", "spearman")], by = "patient") %>%
+  arrange(patient)
+
+dup_patients_qc <- data.frame()
+dup_patients_qc <- rbind(dup_patients_qc, qc_summary)
+
+
+# brush (sherlock 2 and 3) -------------------------------------
+dup_rows <- clinical_brush[clinical_brush$Study.ID %in% 
+                             clinical_brush$Study.ID[duplicated(clinical_brush$Study.ID)], ]
+
+write.csv(dup_rows, file.path(qc.dir, "duplicated_patients_brush.csv"))
+
+# view first 10 counts to check that the counts are different in these samples
+dup_rows_counts <- counts_merged[1:10,row.names(dup_rows)]
+write.csv(dup_rows_counts, file.path(qc.dir, "duplicated_patients_brush_first10counts.csv"))
+
+
+# Library size and gene counts
+dge <- DGEList(counts = counts_merged)
+cpm_mat <- cpm(dge, log = FALSE)
+
+subset = counts_merged[,row.names(dup_rows)]
+cpm_mat <- cpm_mat[,colnames(subset)]
+
+qc_df <- data.frame(
+  patient = clinical_brush[colnames(subset), "Study.ID"],
+  batch = clinical_brush[colnames(subset), "batch"],
+  sample = colnames(subset),
+  lib_size = colSums(subset),
+  detected_genes = colSums(cpm_mat > 1),
+  prop_zero = colSums(subset == 0) / nrow(subset)
+)
+
+dup_cor <- qc_df %>%
+  group_by(patient) %>%
+  summarise(
+    sample1 = sample[1],
+    sample2 = sample[2],
+    pearson = cor(log2(subset[, sample[1]] + 1),
+                  log2(subset[, sample[2]] + 1),
+                  method = "pearson"),
+    spearman = cor(log2(subset[, sample[1]] + 1),
+                   log2(subset[, sample[2]] + 1),
+                   method = "spearman")
+  )
+
+qc_summary <- qc_df %>%
+  left_join(dup_cor[,c("patient", "pearson", "spearman")], by = "patient") %>%
+  arrange(patient)
+
+dup_patients_qc <- rbind(dup_patients_qc, qc_summary)
+
+
+
+
+
+#biopt (sherlock 2 and 3) -----------------------------------------
+dup_rows <- clinical_biopt[clinical_biopt$Study.ID %in% 
+                             clinical_biopt$Study.ID[duplicated(clinical_biopt$Study.ID)], ]
+write.csv(dup_rows, file.path(qc.dir, "duplicated_patients_biopt.csv"))
+
+# view first 10 counts to check that the counts are different in these samples
+dup_rows_counts <- counts_merged[1:10,row.names(dup_rows)]
+write.csv(dup_rows_counts, file.path(qc.dir, "duplicated_patients_biopt_first10counts.csv"))
+
+
+# Library size and gene counts
+dge <- DGEList(counts = counts_merged)
+cpm_mat <- cpm(dge, log = FALSE)
+
+subset = counts_merged[,row.names(dup_rows)]
+cpm_mat <- cpm_mat[,colnames(subset)]
+
+qc_df <- data.frame(
+  patient = clinical_biopt[colnames(subset), "Study.ID"],
+  batch = clinical_biopt[colnames(subset), "batch"],
+  sample = colnames(subset),
+  lib_size = colSums(subset),
+  detected_genes = colSums(cpm_mat > 1),
+  prop_zero = colSums(subset == 0) / nrow(subset)
+)
+
+
+dup_cor <- qc_df %>%
+  group_by(patient) %>%
+  summarise(
+    sample1 = sample[1],
+    sample2 = sample[2],
+    pearson = cor(log2(subset[, sample[1]] + 1),
+                  log2(subset[, sample[2]] + 1),
+                  method = "pearson"),
+    spearman = cor(log2(subset[, sample[1]] + 1),
+                   log2(subset[, sample[2]] + 1),
+                   method = "spearman")
+  )
+
+qc_summary <- qc_df %>%
+  left_join(dup_cor[,c("patient", "pearson", "spearman")], by = "patient") %>%
+  arrange(patient)
+
+dup_patients_qc <- rbind(dup_patients_qc, qc_summary)
+write.csv(dup_patients_qc, file.path(qc.dir, "duplicated_patients_qc_sk1sk2sk3.csv"))
+
+
+best_libsize_samples <- dup_patients_qc %>%
+  group_by(patient) %>%
+  slice_max(lib_size, n = 1) %>%
+  pull(sample)
+
+samples_to_drop <- setdiff(dup_patients_qc$sample, best_libsize_samples)
+
+# Save analysis-ready data
+analysis.ready.data.dir <- file.path(postQC.data.dir, "analysis_ready")
+
+# ##-- Pre batch correction
+counts_merged <- readRDS(file.path(combat.processed.data.dir, "counts_merged_pre_combat.rds"))
+
+# ##-- Post batch correction
+counts_combat <- readRDS(file.path(combat.processed.data.dir, "counts_combat.rds"))
+
+clinical_brushbiopt <- readRDS(file.path(postQC.data.dir, "clinical_brushbiopt_simple.rds")) #552 samples
+clinical_brushbiopt$batch <- as.factor(clinical_brushbiopt$batch)
+
+
+
+cat("END OF THIS JOB", Sys.time(), "\n")

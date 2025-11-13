@@ -39,9 +39,9 @@ sherlock2.dir <- "/groups/umcg-griac/tmp02/projects/KathyPhung/SHERLOCK2"
 setwd(file.path(main.dir))
 
 # ================================================================================== #
-# 6. COMBAT-SEQ TO COMBINE SHERLOCK2 AND SHERLOCK3 =================================
+# 1. COMBAT-SEQ TO COMBINE SHERLOCK2 AND SHERLOCK3 =================================
 # ================================================================================== #
-cat("Starting 6. COMBAT-SEQ TO COMBINE SHERLOCK2 AND SHERLOCK3", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+cat("Starting 1. COMBAT-SEQ TO COMBINE SHERLOCK2 AND SHERLOCK3", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
 # NOTE: Combat needs counts in matrix class, not data frame
 
 #Load in SHERLOCK3 data #66,138 genes
@@ -50,6 +50,8 @@ counts_sk3<- readRDS(file.path(processed.data.dir, "datawrangling_qc_sk3_only", 
 
 #Load in SHERLOCK2 data #69,972 genes
 counts_sk2 <- readRDS(file.path(sherlock2.dir, "data", "processed", "datawrangling_qc", "counts.rds")) #327 samples, 69972 genes
+
+
 
 # ComBat ================================================================================
 # Merge and keep matching Ensembl IDs between the two files
@@ -78,9 +80,9 @@ saveRDS(counts_combat, file.path(combat.processed.data.dir, "counts_combat.rds")
 
 
 # ================================================================================== #
-# 7. LOAD IN DATA AGAIN==================================================================
+# 2. LOAD IN DATA AGAIN==================================================================
 # ================================================================================== #
-cat("Starting 7. Load in data again", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+cat("Starting 2. Load in data again", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
 
 ## COUNTS ---------------------------------------------------------------------------------
 ## Merged SHERLOCK 2 and 3 counts ##
@@ -102,13 +104,13 @@ clinical_sk2_ids <- read_xlsx(file.path(sherlock2.dir, "data", "raw", "Samples_c
 
 
 # ================================================================================== #
-# 8. Create merged clinical files for brush and biopt ==============================
+# 3. Create merged clinical files for brush and biopt ==============================
 # ================================================================================== #
 ## Already have clinical file for sk3 ##
 
 ## Make sk2 clinical files
 
-cat("Starting 8. Create merged clinical files for brush and biopt", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+cat("Starting 3. Create merged clinical files for brush and biopt", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
 
 # Include only SHERLOCK2 patients
 clinical_sk2_ids <- clinical_sk2_ids[order(clinical_sk2_ids$Customer.ID),]
@@ -152,16 +154,22 @@ write.csv(clinical_brushbiopt_master, file.path(postQC.data.dir, "master","clini
 saveRDS(clinical_brushbiopt_master, file.path(postQC.data.dir,  "master","clinical_brushbiopt_master.rds"))
 
 saveRDS(clinical_brush_master, file.path(postQC.data.dir,  "master","clinical_brush_master.rds"))
+write.csv(clinical_brush_master, file.path(postQC.data.dir,  "master","clinical_brush_master.csv"))
+
 saveRDS(clinical_biopt_master, file.path(postQC.data.dir,  "master","clinical_biopt_master.rds"))
+write.csv(clinical_biopt_master, file.path(postQC.data.dir,  "master","clinical_biopt_master.csv"))
 
 saveRDS(counts_brush_combat, file.path(combat.processed.data.dir, "counts_brush_combat.rds"))
+write.csv(counts_brush_combat, file.path(combat.processed.data.dir, "counts_brush_combat.csv"))
+
 saveRDS(counts_biopt_combat, file.path(combat.processed.data.dir, "counts_biopt_combat.rds"))
+write.csv(counts_biopt_combat, file.path(combat.processed.data.dir,  "counts_biopt_combat.csv"))
 
 
 # ================================================================================== #
-# 8.1 Subset master clinical file for main variables ===============================
+# 3.1 Subset master clinical file for main variables ===============================
 # ================================================================================== #
-cat("Starting 8.1. Subset main clinical file", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+cat("Starting 3.1. Subset main clinical file", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
 
 clinical_brushbiopt <- clinical_brushbiopt_master %>% 
   dplyr::select(
