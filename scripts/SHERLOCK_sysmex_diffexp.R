@@ -1,6 +1,6 @@
 #SHERLOCK3 - Analysis of Sysmex data
 
-# The Sysmex variables have been labeled in green.
+# The Sysmex variables have been labeled in green in "Sherlock_database_07_25_Final.xlsx"
 
 # Assess 
 # 1) Any association between the Sysmex parameters and clinical variables using nonlinear/multivariate analyses (age, sex, BMI, packyears, 
@@ -13,7 +13,6 @@ options(error = function() { traceback(); quit(status = 1) })
 #options(error = ...) tells r to run the function
 #traceback()	prints the call stack (what functions were running in what order at the time of failure. traceback(2) means skip the top frame (the error handler itself).
 #quit(status = 1) tells R to exit and that the script has failed (1=FAIL and 0 = SUCCESS) - sacct command will show job status as FAILED
-
 
 # ================================================================================== #
 # A. SCRIPT SET UP =================================================================
@@ -97,7 +96,7 @@ sysmex_index_end <- which(colnames(raw_clinical) == "EO-Z")
 #bind the current clinical file with sysmex data, matching up the sample IDs
 clinical_brushbiopt <- cbind(clinical_brushbiopt_master, raw_clinical[match(clinical_brushbiopt_master$Study.ID, 
                                                                             raw_clinical$class_incl_study_id),
-                                                                      sysmex_index_start:sysmex_index_end]) #274 samples
+                                                                      sysmex_index_start:sysmex_index_end]) 
 
 colnames(clinical_brushbiopt) <- make.names(colnames(clinical_brushbiopt))
 
@@ -110,12 +109,21 @@ clinical_brushbiopt <- clinical_brushbiopt %>%
     corticosteroid = crf_corticosteroid,
     FVC_post= postbodybox_fvc_post ,
     FEV1_FVC_post = postbodybox_fev1_fvc_post
-  )
+  ) 
 
+clinical_brushbiopt$age <- as.numeric(clinical_brushbiopt$age)
 
+#Some rows for sysmex varaible have "----" which turn it into a character. make these NA
+clinical_brushbiopt[which(clinical_brushbiopt$RELYMP.103uL == "----"),"RELYMP.103uL"] <- NA
+clinical_brushbiopt$RELYMP.103uL <- as.numeric(clinical_brushbiopt$RELYMP.103uL)
 
-clinical_brush <-  clinical_brushbiopt[which(clinical_brushbiopt$sampletype == "Brush"),] #274
-clinical_biopt <-  clinical_brushbiopt[which(clinical_brushbiopt$sampletype == "Biopt"),] #278
+clinical_brushbiopt[which(clinical_brushbiopt$RELYMP == "----"),"RELYMP"] <- NA
+clinical_brushbiopt$RELYMP <- as.numeric(clinical_brushbiopt$RELYMP)
+
+sapply(clinical_brushbiopt[619:ncol(clinical_brushbiopt)],class)
+
+clinical_brush <-  clinical_brushbiopt[which(clinical_brushbiopt$sampletype == "Brush"),] #270
+clinical_biopt <-  clinical_brushbiopt[which(clinical_brushbiopt$sampletype == "Biopt"),] #271
 
 
 
@@ -183,8 +191,12 @@ diffexp_edgeR <- function(this.diffexp.dir, showEnsemblID = FALSE) {
     listofvolcano <- list()
     
     
+    sysmex_vars <- colnames(clinical2[, 619:ncol(clinical2)])
+    
+
     for (this_sysmex_variable in colnames(clinical2[,619:ncol(clinical2)])){
       cat(paste("Starting SAMPLE TYPE", j, this_sysmex_variable), format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+      
       
       #DESIGN MATRIX
       # we cant correct for classification because the sysmex variable could be associated with the classification
@@ -194,9 +206,17 @@ diffexp_edgeR <- function(this.diffexp.dir, showEnsemblID = FALSE) {
       design <- model.matrix(formula, #Removing the intercept by using "0 +" means “I want to estimate the expression level for each group independently, and I’ll decide later how to compare them.” instead of edgeR automatically taking 'COntrol' as the reference value since it's the first level in the factor classification (ie. control becomes the intercept)
                              data = clinical2) #Design matrix
       
+      
       # Account for the fact that some patients are missing sysmex data
       clinical2 <- clinical2[intersect(row.names(clinical2), row.names(design)), ] 
       counts2 <- counts2[,row.names(clinical2)]
+      
+      zero_proportion <- sum(clinical2[,this_sysmex_variable] == 0, na.rm = TRUE)/length(clinical2[,this_sysmex_variable])
+      
+      if(zero_proportion > 0.8){
+        message("Skipping ", this_sysmex_variable, " (", round(zero_proportion * 100, 1), "% zeros)")
+        next        
+      }
       
       # DGEList is a list-based data object. It has a matrix 'counts', a data.frame 'samples' (has info about the sample) with a column "lib.size" for library size or sequency depth, 
       DGEL<- DGEList(counts=counts2) 
@@ -227,12 +247,14 @@ diffexp_edgeR <- function(this.diffexp.dir, showEnsemblID = FALSE) {
       
       tT <- topTags(qlf,n=nrow(DGEL))$table #topTags gets top genes, here we want all of the genes, edgeR's default p.adjust method is BH
       tT$Legend <- ifelse(
-        tT$FDR < 0.05 & tT$logFC > 1, "Upregulated",
+        tT$FDR < 0.05 & tT$logFC > 0, "Upregulated",
         ifelse(
-          tT$FDR < 0.05 & tT$logFC < -1, "Downregulated",
+          tT$FDR < 0.05 & tT$logFC < 0, "Downregulated",
           "Not Significant"))
       
-      tT$Legend[is.na(tT$Legend)]="Not significant"
+      tT$Legend[is.na(tT$Legend)]="Not Significant"
+      
+      tT$Legend <- factor(tT$Legend, levels = c("Downregulated", "Upregulated", "Not Significant"))
       
       tT$gene_symbol=hgnc_symbols_db[row.names(tT), "SYMBOL"] #add hgnc symbols
       
@@ -246,14 +268,14 @@ diffexp_edgeR <- function(this.diffexp.dir, showEnsemblID = FALSE) {
         tT <- tT[-which(is.na(tT$gene_symbol)), ] #listofresults_hgnconly
       }
       
-      selection <-which((tT$logFC>1|tT$logFC< -1)&tT$FDR<0.05)
+      selection <-which(tT$FDR<0.05)
       
       tT2 <- tT[selection,]
-      
-      
+
+
       listoftT[[this_sysmex_variable]] <- tT
       listoftT2[[this_sysmex_variable]] <- tT2
-      
+
       
       # ================================================================================== #
       # 2.1. VOLCANO PLOT ================================================================
@@ -261,30 +283,31 @@ diffexp_edgeR <- function(this.diffexp.dir, showEnsemblID = FALSE) {
       cat("Starting 2.1. VOLCANO PLOT", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
       
       volcano <- ggplot(tT, aes(x = logFC, y = -log10(PValue))) +
+        ggtitle(paste(j, "-", this_sysmex_variable)) +
         geom_point(aes(color = Legend)) +
-        scale_color_manual(values = c("Downregulated" = "blue", "Not Significant" = "grey", "Upregulated" = "red"))+
+        scale_color_manual(values = c("Downregulated" = "blue", "Not Significant" = "grey", "Upregulated" = "red"), drop = FALSE)+
         geom_hline(yintercept =-log10(max(tT2$PValue)),colour="black", linetype="dashed")+
-        geom_vline(xintercept =-1,colour="black", linetype="dashed")+
-        geom_vline(xintercept =1,colour="black", linetype="dashed")+
-        geom_text_repel(data = subset(tT2[1:20,]),
+        geom_text_repel(data = subset(tT2[1:30,]),
                         aes(label= gene_symbol),size = 4, box.padding = unit(0.35, "lines"),
                         point.padding = unit(0.3, "lines") ) +
         theme_bw(base_size = 18) + theme(legend.position = "bottom",
                                          legend.text = element_text(size = 14),
                                          legend.title = element_text(size = 16)) 
       
-      ggsave(volcano, filename = file.path(diffexp.figures.dir, paste0(j,"_", this_sysmex_variable,"_volcano_plot.png")), 
-             width = 25, height = 25, 
-             units = "cm")
-      
-      
+      # ggsave(volcano, filename = file.path(diffexp.figures.dir, paste0(j,"_", this_sysmex_variable,"_volcano_plot.png")),
+      #        width = 25, height = 25,
+      #        units = "cm")
+
+
       listofvolcano[[this_sysmex_variable]] <- volcano
-      
       
       
     } #close loop for sysmex variable
     
+
+    
     listofresults[[j]] <- list(tT = listoftT, tT2 = listoftT2, volcano = listofvolcano)
+    
     
     #Save all results
     saveRDS(listofresults, file = file.path(diffexp.results.dir, "listofresults.RDS"))
@@ -292,69 +315,55 @@ diffexp_edgeR <- function(this.diffexp.dir, showEnsemblID = FALSE) {
     
     
     
-    # 
-    # ### Save volcano plots --------------------------------------------------------------------------------------
-    # cat("Saving VOLCANO PLOTS", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
-    # 
-    # volcano.dir <- file.path(diffexp.figures.dir, "volcano")
-    # if(!exists(volcano.dir)) dir.create(volcano.dir, recursive = TRUE)
-    # 
-    # #NOTE!!!!Below code doesn't work in hpc when run as a job, but works in interactive if listofresults is loaded manually with readRDS and the code is run???
-    # pdf(file= file.path(volcano.dir, "volcano_plots_hpc.pdf"), width = 8, height = 8)
-    # 
-    # #### Biopt Control vs Brush COntrol --------------------------------------------------------------------------------------
-    # listofresults[["brushbiopt"]][["volcano"]][["contrast7"]] + ggtitle(paste("Biopt_Control - Brush_Control"))
-    # 
-    # #### Severe COPD - Control ---------------------------------------------------------------------------------------
-    # listofresults[["brush"]][["volcano"]][["contrast1"]] + ggtitle(paste("Brush:","Severe COPD - Control"))
-    # listofresults[["biopt"]][["volcano"]][["contrast1"]] + ggtitle(paste("Biopt:","Severe COPD - Control"))
-    # 
-    # #---Venn diagram to compare biopt and brush#
-    # x <- list(Brush = row.names(listofresults[["brush"]][["tT2"]][["contrast1"]]), 
-    #           Biopsy = row.names(listofresults[["biopt"]][["tT2"]][["contrast1"]])
-    # )
-    # 
-    # (ggvenn(x, stroke_size = 1.5) + ggtitle("Severe COPD - Control"))
-    # 
-    # #----Delta DE to compare biopt and brush
-    # listofresults[["brushbiopt"]][["volcano"]][["contrast4"]] + 
-    #   ggtitle(paste("(Biopt_Severe.COPD - Brush_Severe.COPD) - \n (Biopt_Control - Brush_Control)")) + 
-    #   theme(plot.title = element_text(size = 15)) 
-    # 
-    # #### Mild.moderate.COPD - Control --------------------------------------------------------------------------------------
-    # listofresults[["brush"]][["volcano"]][["contrast2"]] + ggtitle(paste("Brush:","Mild.moderate.COPD - Control"))
-    # listofresults[["biopt"]][["volcano"]][["contrast2"]] + ggtitle(paste("Biopt:","Mild.moderate.COPD - Control"))
-    # 
-    # #---Venn diagram to compare biopt and brush#
-    # x <- list(Brush = row.names(listofresults[["brush"]][["tT2"]][["contrast2"]]), 
-    #           Biopsy = row.names(listofresults[["biopt"]][["tT2"]][["contrast2"]]))
-    # 
-    # (ggvenn(x, stroke_size = 1.5) + ggtitle("Mild.moderate.COPD - Control"))
-    # 
-    # #---Delta DE to compare biopt and nasal
-    # listofresults[["brushbiopt"]][["volcano"]][["contrast5"]] + 
-    #   ggtitle(paste("(Biopt_Mild.moderate.COPD - Brush_Mild.moderate.COPD) - \n (Biopt_Control- Brush_Control)")) + 
-    #   theme(plot.title = element_text(size = 15)) 
-    # 
-    # #### Severe.COPD - Mild.moderate.COPD --------------------------------------------------------------------------------------
-    # listofresults[["brush"]][["volcano"]][["contrast3"]] + ggtitle(paste("Brush:","Severe.COPD - Mild.moderate.COPD"))
-    # listofresults[["biopt"]][["volcano"]][["contrast3"]] + ggtitle(paste("Biopt:","Severe.COPD - Mild.moderate.COPD"))
-    # 
-    # #---Venn diagram to compare biopt and nasal#
-    # x <- list(Brush = row.names(listofresults[["brush"]][["tT2"]][["contrast3"]]), 
-    #           Biopsy = row.names(listofresults[["biopt"]][["tT2"]][["contrast3"]]))
-    # 
-    # (ggvenn(x, stroke_size = 1.5) + ggtitle("Severe.COPD - Mild.moderate.COPD"))
-    # 
-    # #---Delta DE to compare biopt and nasal
-    # listofresults[["brushbiopt"]][["volcano"]][["contrast6"]] + 
-    #   ggtitle(paste("(Biopt_Severe.COPD - Brush_Severe.COPD) - \n (Biopt_Mild.moderate.COPD - Brush_Mild.moderate.COPD)")) + 
-    #   theme(plot.title = element_text(size = 15)) 
-    # 
-    # 
-    # 
-    # 
-    # dev.off()
+    ## Grid plo t for volcano plots - 9 plots per page to save space
+    
+    library(patchwork)
+    
+    # Suppose volcano.list is your list of 40 ggplots
+    total_plots <- length(listofvolcano)
+    plots_per_page <- 4
+    total_pages <- ceiling(total_plots / plots_per_page)
+
+
+    pdf(file.path(diffexp.figures.dir,paste0(j, "_volcano_plot_panels.pdf")), width = 10, height = 10)
+    
+    for (i in seq_len(total_pages)) {
+      start <- (i - 1) * plots_per_page + 1
+      end <- min(i * plots_per_page, total_plots)
+      
+      page_plots <- listofvolcano[start:end]
+      
+      plotting_theme_func <- function(p) {
+        p + theme(
+            plot.title = element_text(size = 12, face = "bold", hjust = 0.5),
+            axis.text = element_text(size = 8),
+            axis.title = element_text(size = 9),
+            legend.text = element_text(size = 8),
+            legend.title = element_text(size = 9)
+        )
+        
+      }
+      
+      #map = apply a function to each element of a vector, in this case its our listofvolcanoplots
+      page_plots <- Map(plotting_theme_func, page_plots)
+      
+      
+      # Combine current 9 (or fewer) plots in a 3x3 grid
+      grid_plot <- wrap_plots(page_plots, ncol = 2, nrow = 2, guides = "collect") +
+        
+        plot_layout(guides = "collect") +
+        
+        plot_annotation(
+          title = paste("Sysmex variables & Gene expression - ", j),
+          theme = theme(plot.title = element_text(size = 16, face = "bold"))
+        ) &
+        theme(legend.position = "bottom")  # or "right", "top", "left"
+      
+      print(grid_plot)
+    }      
+   
+    dev.off()
+    
     
   } #close for loop (brush and biopt)
   
@@ -362,7 +371,23 @@ diffexp_edgeR <- function(this.diffexp.dir, showEnsemblID = FALSE) {
 } #close function
 
 diffexp_edgeR(this.diffexp.dir = diffexp.dir, showEnsemblID  = TRUE)
-diffexp_edgeR(this.diffexp.dir = diffexp.hgnconly.dir, showEnsemblID = FALSE)
+# diffexp_edgeR(this.diffexp.dir = diffexp.hgnconly.dir, showEnsemblID = FALSE)
+
+
+
 
 cat("END OF THIS JOB", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+
+#Note the sysmex variables are not scaled, therefore logFC changes may not reflect biological changes
+#Get all unique assoaicted genes
+relymp_indexes <- which(names(listofresults[["brush"]][["tT2"]]) %in% c("RELYMP", "RELYMP.103uL"))
+all_genes <- unlist(lapply(listofresults[["brush"]][["tT2"]][-c(relymp_indexes)], function(x) x$gene_symbol))
+
+# Get unique ones
+unique_genes <- unique(all_genes)
+
+# How many unique genes? 4231 for brush
+length(unique_genes)
+
+# Create a table with genes as rows and diff exp results as columns, with the matching genes
 
