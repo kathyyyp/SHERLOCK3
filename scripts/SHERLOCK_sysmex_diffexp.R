@@ -134,11 +134,11 @@ clinical_biopt <-  clinical_brushbiopt[which(clinical_brushbiopt$sampletype == "
 # ================================================================================== #
 cat("Starting 2. DIFFERENTIAL EXPRESSION", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
 
-diffexp.dir <- file.path(output.dir, "diffexp")
+diffexp.dir <- file.path(output.dir, "diffexp_withgroup")
 if(!exists(diffexp.dir)) dir.create(diffexp.dir, recursive = TRUE)
 
-diffexp.hgnconly.dir <- file.path(output.dir, "diffexp_hgnc_only")
-if(!exists(diffexp.hgnconly.dir)) dir.create(diffexp.hgnconly.dir, recursive = TRUE)
+# diffexp.hgnconly.dir <- file.path(output.dir, "diffexp_hgnc_only")
+# if(!exists(diffexp.hgnconly.dir)) dir.create(diffexp.hgnconly.dir, recursive = TRUE)
 
 
 
@@ -214,12 +214,25 @@ diffexp_edgeR <- function(this.diffexp.dir, showEnsemblID = FALSE) {
       zero_proportion <- sum(clinical2[,this_sysmex_variable] == 0, na.rm = TRUE)/length(clinical2[,this_sysmex_variable])
       
       if(zero_proportion > 0.8){
-        message("Skipping ", this_sysmex_variable, " (", round(zero_proportion * 100, 1), "% zeros)")
+        cat(paste0("Skipping ", this_sysmex_variable, " (", round(zero_proportion * 100, 1), "% zeros)"))
         next        
       }
       
+      # Filter out outliers
+      stdev  <- sd(clinical2[,this_sysmex_variable])
+      
+      #if value is 3 standard deviations away from the mean, make it NA
+      if (!is.na(stdev) && stdev > 0) {
+        mean_val <- mean(var)
+        outliers <- abs(clinical2[,this_sysmex_variable] - mean_val) > 3 * stdev
+        clinical2[outliers, this_sysmex_variable] <- NA
+      }
+      
+      
+      
+      
       # DGEList is a list-based data object. It has a matrix 'counts', a data.frame 'samples' (has info about the sample) with a column "lib.size" for library size or sequency depth, 
-      DGEL<- DGEList(counts=counts2) 
+      DGEL<- DGEList(counts=counts2, group = clinical2$classification) 
       
       # FILTER
       keep <- filterByExpr(DGEL) 
@@ -309,9 +322,7 @@ diffexp_edgeR <- function(this.diffexp.dir, showEnsemblID = FALSE) {
     listofresults[[j]] <- list(tT = listoftT, tT2 = listoftT2, volcano = listofvolcano)
     
     
-    #Save all results
-    saveRDS(listofresults, file = file.path(diffexp.results.dir, "listofresults.RDS"))
-    
+
     
     
     
@@ -366,6 +377,9 @@ diffexp_edgeR <- function(this.diffexp.dir, showEnsemblID = FALSE) {
     
     
   } #close for loop (brush and biopt)
+  #Save all results
+  
+  saveRDS(listofresults, file = file.path(diffexp.results.dir, "listofresults2.RDS"))
   
   
 } #close function
@@ -390,4 +404,104 @@ unique_genes <- unique(all_genes)
 length(unique_genes)
 
 # Create a table with genes as rows and diff exp results as columns, with the matching genes
+
+
+# ================================================================================== #
+# 3. SCATTERPLOTS ==================================================================
+# ================================================================================== #
+diffexp.dir <- file.path(output.dir, "diffexp_withgroup")
+diffexp.results.dir <- file.path(diffexp.dir, "results")
+diffexp.figures.dir <- file.path(diffexp.dir, "figures")
+
+
+listofresults <- readRDS(file.path(diffexp.results.dir, "listofresults.RDS"))
+
+
+clinical <- clinical_brush
+counts <- counts_brush
+counts_voom <- voom(counts_brush)
+
+gene <- "SUSD2"
+gene_symbol=hgnc_symbols_db[which(hgnc_symbols_db$SYMBOL == gene), "GENEID"] 
+sysmex_variable <- "IG"
+
+clinical2 <- clinical[!is.na(clinical[,sysmex_variable]),] 
+counts2 <- counts_voom$E[,row.names(clinical2)]
+
+
+
+scatterplot_data <- as.data.frame(cbind(sysmex_variable = clinical2[,sysmex_variable],
+                                    gene = counts2[gene_symbol,],
+                                  classification = clinical2$classification,
+                                  sample = clinical2$Study.ID))
+
+
+scatterplot_theme <- theme(axis.title = element_text(size = 24),
+                    axis.text = element_text(size = 24),
+                    title = element_text(size = 20),
+                    legend.text = element_text(size = 18)) 
+
+
+
+
+
+#geom_point, split by disease
+boxplotfinal2 <- ggplot(scatterplot_data, aes(
+  x = as.numeric(sysmex_variable),
+  y = as.numeric(gene))) +
+  
+  theme_bw()+
+  scatterplot_theme +
+  geom_point(aes(colour=classification)) +
+  geom_text(aes(label = sample)) +
+  
+  # stat_pvalue_manual(stat.table.gsva,
+  #                    label = "p",
+  #                    tip.length = 0.01,
+  #                    size = 7)+
+  # 
+  # # scale_y_continuous(expand = c(0.07, 0, 0.07, 0)) +
+  # stat_summary(fun.y = mean, fill = "red",
+  #              geom = "point", shape = 21, size =4,
+  #              show.legend = TRUE) +
+  # 
+
+
+theme(axis.text.x = element_text(size = 18))+
+  labs(title = paste0(gene,"_vs_", sysmex_variable),
+       color = "Disease Severity" #legend title
+       ) +
+  scale_color_manual(values = c("Control" = "#00BA38",
+                                "Mild-moderate COPD" = "#619CFF",
+                                "Severe COPD" = "#F8766D"))+
+  ylab (label = gene) +
+  xlab (label = sysmex_variable)
+
+
+ggsave(boxplotfinal2, filename = file.path(diffexp.figures.dir, paste0(gene,"_vs_", sysmex_variable,"_labelledscatterplot.png")),
+              width = 30, height = 25,
+              units = "cm")
+
+
+
+
+# my_comparisons <- combn(unique(clinical$group), 2, simplify = FALSE)
+# 
+# x_order <- c("Control", "TB", "Non-active Sarcoidosis", "Active Sarcoidosis", "Pneumonia", "Lung Cancer")
+# 
+# boxplot_gsva$group <- factor(boxplot_gsva$group, levels = x_order)
+# boxplot_gsva$V1 <- as.numeric(boxplot_gsva$V1)
+# 
+# stat.table.gsva <- boxplot_gsva  %>%
+#   wilcox_test(V1 ~ group,
+#               paired = FALSE) %>%
+#   add_xy_position(x = "group") 
+# 
+# stat.table.gsva <- stat.table.gsva[which(stat.table.gsva$p < 0.05),]
+# lowest_bracket <- max(boxplot_gsva$V1) + 0.05*(max(boxplot_gsva$V1))
+# stat.table.gsva$y.position <- seq(lowest_bracket, by= 0.1, length.out = nrow(stat.table.gsva))
+# 
+
+
+
 
