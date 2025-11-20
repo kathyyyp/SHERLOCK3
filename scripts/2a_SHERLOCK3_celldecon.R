@@ -60,14 +60,16 @@ if(!exists(file.path(data.dir, "processed", "celldecon"))) dir.create(file.path(
 write.table(expression_cpm, file = file.path(data.dir, "processed", "celldecon", "expression_cpm.tsv"), sep="\t", quote=FALSE, row.names = FALSE)
 
 ## RUN CIBERSORT with ref1_sigmatrix from fia (from Nov 2024, "ref1_1_1411") - check if there is a new one - this is for bronchial
-## Batch correction S-mode 100 permutations
+## 1. Create signature matrix was done already - created Ref1_sigmatrix
+## Go to 2. Impute cell fractions
+## Batch correction, S-mode, 100 permutations
 ## refmatrix = Ref_1_1411 (single cell reference matrix)
 ## sigmatrix = Ref1_sigmatrix (signature matrix)
 ## mixture = expression_cpm
 
 
-#Run after removal of outliers after removal of outliers
-cibersort_results <- read.delim(file.path(data.dir, "processed", "celldecon", "results1.txt"))
+#Upload results from cibersort (results.txt) to processed data folder and run
+cibersort_results <- read.delim(file.path(data.dir, "processed", "celldecon", "results_20251114.txt"))
 row.names(cibersort_results) <- hidesample$V1
 cibersort_results <- cibersort_results[,-1]
 
@@ -109,8 +111,8 @@ if(!exists(celldecon.dir)) dir.create(celldecon.dir, recursive = TRUE)
 celldecon.figures.dir <- file.path(celldecon.dir, "figures")
 if(!exists(celldecon.figures.dir)) dir.create(celldecon.figures.dir, recursive = TRUE)
 
-saveRDS(ciber_biopt,file.path(celldecon.figures.dir,"celldecon_ciber_biopt.rds") )
-saveRDS(ciber_brush,file.path(celldecon.figures.dir,"celldecon_ciber_brush.rds") )
+saveRDS(ciber_biopt,file.path(celldecon.figures.dir,"celldecon_ciber_biopt.rds"))
+saveRDS(ciber_brush,file.path(celldecon.figures.dir,"celldecon_ciber_brush.rds"))
 
 #Normality test
 ggqqplot(residuals(lm(proportion ~ classification, data = ciber_biopt)))

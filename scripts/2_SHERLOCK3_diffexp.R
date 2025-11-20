@@ -652,4 +652,5 @@ diffexp_edgeR(this.diffexp.dir = diffexp.dir, showEnsemblID  = TRUE)
 diffexp_edgeR(this.diffexp.dir = diffexp.hgnconly.dir, showEnsemblID = FALSE)
 #--------------------------------------------------------------------------------#
 
+cat("END OF THIS JOB", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
 
