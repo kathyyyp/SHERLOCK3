@@ -1,11 +1,14 @@
 # ================================================================================== #
 # SCRIPT SET UP ====================================================================
 # ================================================================================== #
-setwd("path/to/your/directory")
-.libPaths("path/to/your/library")
+main.dir <- "/groups/umcg-griac/tmp02/projects/SHERLOCK_2025"
+# .libPaths("path/to/your/library")
+setwd(main.dir)
 
 library("sva")
 library("edgeR")
+library("dplyr")
+
 
 # ====================================================================================================== #
 # A) For SHERLOCK2 and SHERLOCK3 integration only ====================================================== #
@@ -15,34 +18,49 @@ library("edgeR")
 # Use when SHERLOCK1 is not required for main analyses. Here, we integrate SHERLOCK2 and SHERLOCK3, while keeping SHERLOCK1 as a seperate dataset for validation
 # If both biopsy and brush samples are of interest, run ComBat_seq on all samples first, then separate by sample type for downstream analyses
 # 1) Subset each dataset to only include common genes
-# 2) Integrate all 3 batches using ComBat_seq
+# 2) Integrate batches using ComBat_seq
+# 3) Split into brushings and biopsies
 # ------------------------------------------------------------------------------------------------------ #
 
-counts_sk2 <- #load in sherlock2 counts 
-counts_sk3 <- #load in sherlock3 counts 
+data.dir <- file.path(main.dir, "data")
+clinical_master <- read.csv(file.path(data.dir, "clinical_master.csv"), row.names = 1)
+counts_sk2 <- read.csv(file.path(data.dir, "counts_sk2.csv"), row.names = 1, check.names = FALSE) #load in sherlock2 counts (320 samples)
+counts_sk3 <- read.csv(file.path(data.dir, "counts_sk3.csv"), row.names = 1, check.names = FALSE) #load in sherlock3 counts (221 samples)
 
 ## 1) Subset each dataset to only include common genes ------------------------------------------------ #
-  
 counts_merged <- merge(counts_sk2, counts_sk3, by = "row.names", all = FALSE) #all = FALSE keeps only matched rows. nonmatched rows are discarded (TRUE would show NA for unmatched samples)
 row.names(counts_merged) <- counts_merged[,1]
 counts_merged <- as.matrix(counts_merged[,-1])
 
 # Save pre-combat data, for QC or other use
-combat.processed.data.dir <- file.path("path/to/your/directory")
-if(!exists(combat.processed.data.dir))dir.create(combat.processed.data.dir)
+combat.data.dir <- file.path(data.dir, "sherlock2_3_combat")
+if(!exists(combat.data.dir))dir.create(combat.data.dir)
 
-write.csv(counts_merged, file.path(combat.processed.data.dir, "counts_merged_pre_combat.csv"))
-saveRDS(counts_merged, file.path(combat.processed.data.dir, "counts_merged_pre_combat.rds"))
+write.csv(counts_merged, file.path(combat.data.dir, "sherlock2_3_counts_pre_combat.csv"))
 
-## 3) Integrate all 3 batches using ComBat_seq   -------------------------------------------------------------- #
-batch <- c(rep(2, ncol(counts_sk2)), rep(3, ncol(counts_sk3)))
+
+## 2) Integrate batches using ComBat_seq   -------------------------------------------------------------- #
+batch <- clinical_master[colnames(counts_merged),"batch"]
 counts_combat <- ComBat_seq(counts_merged, batch = batch) #genes
 
 # Save batch corrected, integrated counts
-write.csv(counts_combat, file.path(combat.processed.data.dir, "counts_combat.csv")) 
-saveRDS(counts_combat, file.path(combat.processed.data.dir, "counts_combat.rds"))
+write.csv(counts_combat, file.path(combat.data.dir, "sherlock2_3_counts_integrated.csv")) 
 
 
+## 3) Split into brushings and biopsies   -------------------------------------------------------------- #
+brush_ids <- clinical_master %>% 
+  filter(batch != 1,
+         sampletype == "Brush") %>% 
+  row.names()
+counts_brush_combat <- counts_combat[,brush_ids] #270 samples
+write.csv(counts_brush_combat, file.path(combat.data.dir, "sherlock2_3_brush_counts_integrated.csv"))
+
+biopt_ids <- clinical_master %>% 
+  filter(batch != 1,
+         sampletype == "Biopt") %>% 
+  row.names()
+counts_biopt_combat <- counts_combat[,biopt_ids] #271 samples 
+write.csv(counts_biopt_combat, file.path(combat.data.dir,  "sherlock2_3_biopt_counts_integrated.csv"))
 
 
 
@@ -60,15 +78,33 @@ saveRDS(counts_combat, file.path(combat.processed.data.dir, "counts_combat.rds")
 # 3) Integrate all 3 batches using ComBat_seq
 # ----------------------------------------------------------------------------------------------------- #
 
-counts_sk1 <- #load in sherlock1 counts 
-counts_sk2_brush <- #load in sherlock2 (brush only) 
-counts_sk3_brush <- #load in sherlock3 (brush only)  
+data.dir <- file.path(main.dir, "data")
+clinical_master <- read.csv(file.path(data.dir, "clinical_master.csv"), row.names = 1)
+clinical_brush <- clinical_master %>% 
+  filter(sampletype == "Brush")
 
-clinical_brush <- #load in clinical data
+#load in sherlock1 counts 
+counts_sk1 <- read.csv(file.path(data.dir, "counts_sk1.csv"), row.names = 1, check.names = FALSE) #load in sherlock1 counts (167 samples)
+
+#load in sherlock2 counts and subset for brushes
+counts_sk2 <- read.csv(file.path(data.dir, "counts_sk2.csv"), row.names = 1, check.names = FALSE) #load in sherlock2 counts (320 samples)
+sk2_brush_ids <- clinical_brush %>% 
+  filter(batch == 2) %>%  
+  row.names() 
+counts_sk2_brush <- counts_sk2[,sk2_brush_ids] #160 brush samples
+
+#load in sherlock3 counts and subset for brushes
+counts_sk3 <- read.csv(file.path(data.dir, "counts_sk3.csv"), row.names = 1, check.names = FALSE) #load in sherlock3 counts (221 samples)
+sk3_brush_ids <- clinical_brush %>% 
+  filter(batch == 3) %>% 
+  row.names()
+counts_sk3_brush <- counts_sk3[,sk3_brush_ids] #221 brush samples
+
 
 ## 1) Use filterByExpr() on each dataset individually --------------------------------------------------- #
 
 # Match clinical file with sampleIDs in counts file, use classification as grouping variable
+# classification is disease severity, either "Control", "Mild.moderate.COPD" or "Severe.COPD"
   
 # SHERLOCK1 
 counts_sk1_keep <- filterByExpr(counts_sk1, group = clinical_brush[colnames(counts_sk1), "classification"])   
@@ -96,16 +132,16 @@ row.names(counts_merged) <- counts_merged[,1]
 counts_merged <- as.matrix(counts_merged[,-1]) 
 
 # Save pre-combat data, for QC or other use
-combat.processed.data.dir <- file.path("path/to/your/directory")
-if(!exists(combat.processed.data.dir))dir.create(combat.processed.data.dir)
+combat.data.dir <- file.path(data.dir, "sherlock1_2_3_combat")
+if(!exists(combat.data.dir))dir.create(combat.data.dir)
 
-write.csv(counts_merged, file.path(combat.processed.data.dir, "counts_brush_merged_pre_combat_filterbyexpr.csv")) 
-saveRDS(counts_merged, file.path(combat.processed.data.dir, "counts_brush_merged_pre_combat_filterbyexpr.rds"))
+write.csv(counts_merged, file.path(combat.data.dir, "sherlock1_2_3_counts_brush_pre_combat.csv")) 
 
 ## 3) Integrate all 3 batches using ComBat_seq   -------------------------------------------------------------- #
-batch <- c(rep(1, ncol(counts_sk1_filtered)), rep(2, ncol(counts_sk2_brush_filtered)), rep(3, ncol(counts_sk3_brush_filtered)))
-counts_combat <- ComBat_seq(counts_merged, batch = batch) #genes
+batch <- clinical_brush[colnames(counts_merged),"batch"]
+
+counts_combat <- ComBat_seq(counts_merged, batch) #genes
 
 # Save batch corrected, integrated counts
-write.csv(counts_combat, file.path(combat.processed.data.dir, "counts_brush_combat_filterbyexpr.csv")) 
-saveRDS(counts_combat, file.path(combat.processed.data.dir, "counts_brush_combat_filterbyexpr.rds"))
+write.csv(counts_combat, file.path(combat.data.dir, "sherlock1_2_3_counts_brush_integrated.csv")) 
+
