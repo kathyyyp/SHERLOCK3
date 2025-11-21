@@ -80,7 +80,7 @@ counts_merged <- as.matrix(counts_merged[,-1])
 
 
 # ================================================================================== #
-# 3. Create merged clinical files for brush and biopt ==============================
+# 3a. Create merged SK2 adnd SK3 clinical files for brush and biopt ==============================
 # ================================================================================== #
 ## Already have clinical file for sk3 ##
 
@@ -117,6 +117,98 @@ clinical_brushbiopt_master <- clinical_sherlock_master[colnames(counts_merged),]
 
 
 # ================================================================================== #
+# 1. CREATE SHERLOCK1 FILE FROM UDPATED MASTER CLINICAL FILE =======================
+# ================================================================================== #
+cat("Starting 1. CREATE SHERLOCK1 FILE FROM UDPATED MASTER CLINICAL FILE ", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+
+#Load in SHERLOCK1 data #60,683 genes #Note, 4 IDs with count that didn't have clinical data. Rectified below
+rawcounts_sk1 <- read.csv(file.path("data","raw","SHERLOCK1","rawcounts.txt"), sep="\t")
+row.names(rawcounts_sk1)=rawcounts_sk1[,1]
+rawcounts_sk1=rawcounts_sk1[,-1] # 173 samples
+
+s_raw <- read.csv(file.path("data","raw","SHERLOCK1","mastertable_sherlock3.csv"))
+sherlock1_clinical_raw <- s_raw[-which(is.na(s_raw$rna_seq.sample.id)),]
+row.names(sherlock1_clinical_raw) <- sherlock1_clinical_raw$rna_seq.sample.id
+# These patients didn't have counts data in original SHERLOCK1 dataset (no rnaseq sample id)
+# SEO057, A1533 and A2629 ? Work out where this is !!!!!!
+
+c(setdiff(colnames(rawcounts_sk1),sherlock1_clinical_raw$rna_seq.sample.id), setdiff(sherlock1_clinical_raw$rna_seq.sample.id, colnames(rawcounts_sk1)))
+# [1] "LIB5426567_SAM24375539" "LIB5426582_SAM24375554" "LIB5426583_SAM24375555"
+# [4] "LIB5426587_SAM24375559"
+
+
+# Matched IDs from Alen
+# LIB5426567_SAM24375539 580A A_580
+# LIB5426582_SAM24375554 994A A_994
+# LIB5426583_SAM24375555 984A A_984
+# LIB5426587_SAM24375559 1688A A_1688
+
+# As shown above, there were 4 patients with counts but not clinical info for sherlock1 original data 
+# check this now with daan's master sherlock file
+
+# Combine the 4 samples that had the missing clinical data originally (now available in master clinical file) with the other samples
+sherlock1_ID_conversion <- data.frame(
+  rnaseq_id = c("LIB5426567_SAM24375539", #580A 
+                "LIB5426582_SAM24375554", #994A 
+                "LIB5426583_SAM24375555", #984A
+                "LIB5426587_SAM24375559"),#1688A
+  patient_id = c("A_580",   #no classification ( patient not in original file )
+                 "A_994",     #no classification ( patient not in original file )
+                 "A_984",     #no classification ( patient not in original file )
+                 "A_1688")    
+)
+
+sherlock1_ID_conversion <- rbind(sherlock1_ID_conversion, 
+                                 data.frame(rnaseq_id = sherlock1_clinical_raw$rna_seq.sample.id,
+                                            patient_id = sherlock1_clinical_raw$sample.id))
+
+sherlock1_ID_conversion$patient_id <- gsub("A(?=\\d)", "A_", sherlock1_ID_conversion$patient_id, perl = TRUE)
+
+
+#subset for sherlock1
+sherlock1_ID_conversion$patient_id %in% row.names(clinical_sherlock_master_preQC) #A_1864 was in og sherlock1 file but not the master file
+clinical_sk1_master <- clinical_sherlock_master_preQC[sherlock1_ID_conversion$patient_id,]
+clinical_sk1_master <- cbind(rnaseq_id = sherlock1_ID_conversion$rnaseq_id, clinical_sk1_master)
+
+
+clinical_sk1_master <- cbind(clinical_sk1_master, sampletype = "Brush")
+
+row.names(clinical_sk1_master) <- clinical_sk1_master$rnaseq_id
+
+row.names(clinical_sk1_master) %in% colnames(rawcounts_sk1)
+colnames(rawcounts_sk1) %in% row.names(clinical_sk1_master)
+
+clinical_sk1_master <- clinical_sk1_master[colnames(rawcounts_sk1),]
+
+colnames(rawcounts_sk1) == row.names(clinical_sk1_master)
+
+#Some NAs for GOLD classification
+clinical_sk1_master[is.na(clinical_sk1_master$classification), "rnaseq_id"]
+# [1] "LIB5426567_SAM24375539" "LIB5426582_SAM24375554" "LIB5426583_SAM24375555"
+# [4] "LIB5426616_SAM24375588"
+
+#Their sample IDs
+clinical_sk1_master[is.na(clinical_sk1_master$classification), "Study.ID"]
+# "A_580" 
+# "A_994" 
+# "A_984" 
+# NA #the NA is A_1864, available in old sherlock1 clinical but not the master, did not include
+
+na_classifications <- row.names(clinical_sk1_master)[is.na(clinical_sk1_master$classification)]
+sherlock1_clinical_raw[na_classifications,]
+clinical_sk1_master[na_classifications,]
+sherlock1_clinical_raw[na_classifications, c("sample.id", "GOLD.stage", "FEV1.over.FVC", "FEV1.post.bronchodilator.percent.predicted")]
+
+#In summary, only A_1864 has fev1, fev/fvc and classification info in sherlock1_clinical_raw, the other three do not have fev1 or fev/fvc data to work out classification
+
+
+# Remove the 4 patients above with NA classification -----------------------------------------------------------------------
+clinical_sk1_master <- clinical_sk1_master[-c(which(is.na(clinical_sk1_master$classification))),] #169 samples remaining (from 173)
+counts_sk1 <- rawcounts_sk1[,row.names(clinical_sk1_master)] #60683 genes, 169 samples
+
+clinical_sk1_master <- cbind(clinical_sk1_master, batch = rep(1, nrow(clinical_sk1_master)))
+
+# ================================================================================== #
 # 4. SAMPLE EXCLUSIONS =============================================================
 # ================================================================================== #
 # These patients were excluded from study (Daan) and no classification available anyway - not in the clinical files here
@@ -126,12 +218,17 @@ clinical_brushbiopt_master <- clinical_sherlock_master[colnames(counts_merged),]
 
 
 # A2804 (SHERLOCK1) and SEO230 (SHERLOCK2) are the same patient - keep SEO230 in most cases
-sherlock1.processed.dir <-file.path(processed.data.dir, "SHERLOCK1")
-clinical_sk1_master <- readRDS(file.path(sherlock1.processed.dir,"clinical_sk1_master.rds")) #169 samples
-counts_sk1 <- readRDS(file.path(sherlock1.processed.dir,"counts_sk1.rds"))
-
 clinical_sk1_master <- clinical_sk1_master[-which(clinical_sk1_master$Study.ID == "A_2804"),] #168 samples
 counts_sk1 <- counts_sk1[,row.names(clinical_sk1_master)] #60683 counts and 168 samples
+
+sherlock1.processed.dir <-file.path(processed.data.dir, "SHERLOCK1")
+if(!exists(sherlock1.processed.dir)) dir.create(sherlock1.processed.dir)
+saveRDS(counts_sk1, file.path(sherlock1.processed.dir,"counts_sk1.rds"))
+write.csv(counts_sk1, file.path(sherlock1.processed.dir,"counts_sk1.csv"))
+
+saveRDS(clinical_sk1_master, file.path(sherlock1.processed.dir,"clinical_sk1_master.rds"))
+write.csv(clinical_sk1_master, file.path(sherlock1.processed.dir,"clinical_sk1_master.csv"))
+
 
 # ================================================================================== #
 # 4a. Remove 107165-001-016 and 107165-001-059 switched samples =====================
@@ -318,6 +415,7 @@ dup_samples_to_drop <- setdiff(dup_patients_qc$sample, best_libsize_samples)
 
 #subset to exclude
 clinical_sk1_master <- clinical_sk1_master[-which(row.names(clinical_sk1_master) %in% dup_samples_to_drop),] #168 -> 167
+counts_sk1
 
 clinical_brushbiopt_master <- clinical_brushbiopt_master[-which(row.names(clinical_brushbiopt_master) %in% dup_samples_to_drop),] #541 samples
 clinical_brush_master <- clinical_brushbiopt_master[which(clinical_brushbiopt_master$sampletype == "Brush"),] #270 samples
@@ -396,9 +494,9 @@ write.csv(counts_sk2_share, file.path(common.data.dir, "counts_sk2.csv"), row.na
 counts_sk3_share <- counts_sk3[,which(colnames(counts_sk3) %in% colnames(counts_merged))] #225 -> 221
 write.csv(counts_sk3_share, file.path(common.data.dir, "counts_sk3.csv"), row.names = TRUE)
 
-clinical_master <- rbind(clinical_sk1_master[which(row.names(clinical_sk1_master) %in% colnames(counts_sk1)),!which(colnames(clinical_sk1_master) == "rnasseq_id")],
-                         clinical_sk2_master[which(row.names(clinical_sk2_master) %in% colnames(counts_sk2_share)),],
-                         clinical_sk3_master[which(row.names(clinical_sk3_master) %in% colnames(counts_sk3_share)),]) #541 samples total
+clinical_master <- rbind(cbind(clinical_sk1_master[which(row.names(clinical_sk1_master) %in% colnames(counts_sk1)),-which(colnames(clinical_sk1_master) == "rnaseq_id")]),
+                         cbind(clinical_sk2_master[which(row.names(clinical_sk2_master) %in% colnames(counts_sk2_share)),], batch = 2),
+                         cbind(clinical_sk3_master[which(row.names(clinical_sk3_master) %in% colnames(counts_sk3_share)),], batch = 3)) #541 samples total
 
 write.csv(clinical_master, file.path(common.data.dir, "clinical_master.csv"), row.names = TRUE)
 
@@ -459,7 +557,55 @@ saveRDS(clinical_biopt, file.path(postQC.data.dir, "clinical_biopt_simple.rds"))
 
 
 
-# Save for other researchers
+# Same for sherlock1
+
+# ================================================================================== #
+# 3.1 Subset master clinical file for main variables ===============================
+# ================================================================================== #
+cat("Starting 3.1. Subset main clinical file", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+
+clinical_sk1 <- clinical_sk1_master %>% 
+  dplyr::select(
+    Study.ID,
+    age,
+    crf_gender,
+    crf_smoking,
+    crf_packyears,
+    crf_corticosteroid,
+    ics_use,
+    ics_name_factor,
+    lama_use,
+    laba_use,
+    sex_numeric,
+    FEV1, #note this is the same as postbodybox_fev1_post
+    FEV1_pred,
+    FEV1_percent_pred,
+    postbodybox_fvc_post,
+    postbodybox_fev1_fvc_post, #this is postbodybox_fev1_post/postbodybox_fvc_post
+    gold_classification,
+    classification,
+    sampletype,
+    batch
+    
+  ) %>% 
+  dplyr::rename(
+    sex = crf_gender,
+    smoking_status = crf_smoking,
+    packyears = crf_packyears,
+    corticosteroid = crf_corticosteroid,
+    FVC_post= postbodybox_fvc_post ,
+    FEV1_FVC_post = postbodybox_fev1_fvc_post
+  )
+
+
+clinical_sk1$classification <- make.names(clinical_sk1$classification)
+clinical_sk1$smoking_status <- make.names(clinical_sk1$smoking_status)
+clinical_sk1[,c("age", "packyears", "FEV1", "FEV1_percent_pred", "FEV1_FVC_post", "FVC_post")] <- sapply(clinical_sk1[,c("age", "packyears", "FEV1", "FEV1_percent_pred", "FEV1_FVC_post", "FVC_post")], function(x) as.numeric(x))
+
+## Save clinical_sk1 (main patient info, smoking, ics and lung function data)
+write.csv(clinical_sk1, file.path(processed.data.dir, "SHERLOCK1", "clinical_sk1_simple.csv"))
+saveRDS(clinical_sk1, file.path(processed.data.dir, "SHERLOCK1", "clinical_sk1_simple.rds")) 
+
 
 
 
