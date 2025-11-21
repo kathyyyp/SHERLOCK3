@@ -1,5 +1,8 @@
 #Shiny app for Sherlock RNA-Seq - Sysmex - Analysis Nov 2025
-# runApp("sysmex_app.R", host = "0.0.0.0", port = 3838,launch.browser = FALSE)
+# ml RPlus
+# R
+# library(shiny)
+# runApp("shiny/sysmex_app.R", host = "0.0.0.0", port = 3838,launch.browser = FALSE)
 # 
 # wsl
 # cd ${HOME} #to redirect to the linux directory
@@ -47,6 +50,7 @@ library("rstatix")
 library("limma")
 library("ggpubr")
 library("readxl")
+library("edgeR")
 
 # ================================================================================== #
 # B. SET UP DIRECTORY & OUTPUT PATHS ===============================================
@@ -87,7 +91,7 @@ clinical_brushbiopt_master <- readRDS(file.path(postQC.data.dir,  "master","clin
 
 hgnc_symbols_db <- readRDS(file.path(postQC.data.dir,"hgnc_symbols_db.rds"))
 
-
+patient_demographics <- readRDS(file.path(output.dir,"qc", "patient_demographics_postcombat.rds"))
 setwd(file.path(main.dir))
 
 
@@ -133,6 +137,7 @@ clinical_brushbiopt$RELYMP <- as.numeric(clinical_brushbiopt$RELYMP)
 clinical_brush <-  clinical_brushbiopt[which(clinical_brushbiopt$sampletype == "Brush"),] #270
 clinical_biopt <-  clinical_brushbiopt[which(clinical_brushbiopt$sampletype == "Biopt"),] #271
 
+cat("Finished loading data")
 
 
 # ================================================================================== #
@@ -141,20 +146,42 @@ clinical_biopt <-  clinical_brushbiopt[which(clinical_brushbiopt$sampletype == "
 
 ui <- dashboardPage(
   
-  dashboardHeader(title = "SHERLOCK2"),
+  dashboardHeader(title = "SHERLOCK Sysmex"),
   
   dashboardSidebar(
     sidebarMenu(
+      menuItem("1) View Data (post QC)", tabName = "viewdata", icon = icon("search")),
       menuItem("2) Differential Expression", tabName = "comparison", icon = icon("bar-chart")),
       menuItem("3) Gene Expression", tabName = "gene_expression", icon = icon("bar-chart"))
-      )
-
+    )
+    
   ), #closedashboardSidebar
   
   
   dashboardBody(
     title = "SHERLOCK - Sysmex RNA-Seq",
     tabItems(
+      
+      
+      ## UI 1) View Data (post QC)  ---------------------------------------------------------------------------------
+      tabItem("viewdata",
+              
+              tabsetPanel(
+                
+                tabPanel("Clinical",
+                         DTOutput("viewclinical")), #show table
+                
+                tabPanel("Counts",
+                         DTOutput("viewcounts")), #show table
+                
+                tabPanel("Patient Demographics",
+                         DTOutput("viewdemographics")) #show table
+                
+              ) #close tabset Panel
+              
+              
+              
+      ), #close tabItem
       
       
       ## UI 2) Differential Expression -------------------------------------------------------------------------------
@@ -173,12 +200,14 @@ ui <- dashboardPage(
               
               tabsetPanel(
                 tabPanel("Results",
-                         DT::DTOutput("deg2"), #show table
+                         DT::DTOutput("deg2") #show table
+                         
                 ),
                 tabPanel("Volcano",
                          plotOutput("volcano2",
                                     width = "800px",
                                     height = "800px")
+                         
                          
                 )
                 
@@ -197,11 +226,15 @@ ui <- dashboardPage(
                              width = "50%",
                              choices = NULL),
               
+              selectInput("sysmex_variable3",
+                          label = "3) Select Sysmex variable of interest",
+                          choices = colnames(clinical_brushbiopt)[619:ncol(clinical_brushbiopt)],
+                          width = "50%"),
               
-              downloadButton("downloadboxplot3",
+              downloadButton("downloadscatterplot3",
                              "Download expression data for this gene"),
               
-              plotOutput("boxplot3",
+              plotOutput("scatterplot3",
                          width = "650px",
                          height = "650px"),
               
@@ -210,8 +243,8 @@ ui <- dashboardPage(
               
       )
       
-     
-              
+      
+      
     ) #close tabItems
   )#close Dashboard body
 ) #close UI
@@ -223,6 +256,58 @@ server <- function(input, output, session){
   
   
   # ================================================================================== #
+  ## SERVER 1) VIEW DATA  =============================================================
+  # ================================================================================== #
+  
+  
+  ### output$viewcounts View counts file -------------------------------------------------------------------------------------------------------------------------------------------------------
+  
+  
+  output$viewcounts <-  renderDT({
+    
+    datatable(counts,
+              extensions = c('Buttons'),
+              options = list(pageLength = 25,
+                             scrollX = TRUE,
+                             scrollY = "1000px",
+                             dom = 'Bfrtip', 
+                             buttons = c('copy', 'csv', 'excel'))
+    ) #close datatable
+  }) #close render DT
+  
+  
+  ### output$viewclinical  View clinical file -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+  
+  output$viewclinical <-  renderDT({
+    
+    datatable(clinical_brushbiopt,
+              extensions = c('Buttons'),
+              filter = list(position = "top", 
+                            clear = TRUE),
+              options = list(pageLength = 25,
+                             scrollX = TRUE,
+                             scrollY = "1000px",
+                             dom = 'Bfrtip', 
+                             buttons = c('copy', 'csv', 'excel'))
+    ) #close data table
+  })#close render DT
+  
+  
+  ### output$viewdemographics View patient demographics file ----------------------------------------------------------------------------------------------------------------------------------------------------------------------
+  
+  output$viewdemographics<-  renderDT({
+    patient_demographics <- readRDS(file.path(output.dir,"qc", "patient_demographics_postcombat.rds"))
+    
+    datatable(patient_demographics,
+              extensions = c('Buttons'),
+              options = list(
+                dom = 'Bfrtip', 
+                buttons = c('copy', 'csv', 'excel', 'print'))
+    ) #close data table
+  }) #close render DT
+  
+  
+  # ================================================================================== #
   ## SERVER 2) DIFFERENTIAL EXPRESSION ===============================================
   # ================================================================================== #
   
@@ -231,15 +316,15 @@ server <- function(input, output, session){
   study_data2 <- reactive({
     req(input$study2)  # ensure input is not NULL
     
-    results_filepath <- file.path(output.dir, "diffexp_withgroup", "results", "listofresults.RDS")
-    listofresults <- readRDS(results_filepath)
-    
+    listofresults <- readRDS(file.path(output.dir, "sysmex", "diffexp_withgroup", "results", "listofresults.RDS"))
     if(input$study2 == "SHERLOCK - Brush"){
       
       
       list(
-        listoftT = listofresults$tT,
-        listoftT2 = listofresults$tT2
+        clinical2 = clinical_brush,
+        counts2 = counts_brush,
+        tT = listofresults[["brush"]][["tT"]],
+        tT2 = listofresults[["brush"]][["tT2"]]
       )
     }
     
@@ -247,30 +332,34 @@ server <- function(input, output, session){
       
       
       list(
-        listoftT =listofresults$brush$tT,
-        listoftT2 = listofresults$brush$tT2
+        clinical2 = clinical_biopt,
+        counts2 = counts_biopt,
+        tT = listofresults[["biopt"]][["tT"]],
+        tT2 = listofresults[["biopt"]][["tT2"]]
       )
     }
- 
+    
     
   }) #close reactive study_data2
   
+  
+  
+  
+  ### Reactive differential expression script -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
   
   
   ### output$deg2 Render results tT table ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
   
   output$deg2 <- DT::renderDT({
     
-    withProgress(message = "Loading data ...", value = 0.5, {
-      c <- input$sysmex_variable
+    this_sysmex_variable <- input$sysmex_variable
+    
+    withProgress(message = "Running edgeR differential expression...", value = 0.5, {
       
-      listoftT <- study_data2()$listoftT
-      listoftT2 <- study_data2()$listoftT2
+      
+      tT <- as.data.frame(study_data2()$tT[[this_sysmex_variable]])
       
       incProgress(0.8)
-      
-      tT <- as.data.frame(listoftT[[c]])
-      tT2 <- as.data.frame(listoftT2[[c]])
       
       datatable(tT,
                 extensions = c('Buttons'),
@@ -292,34 +381,245 @@ server <- function(input, output, session){
     
     withProgress(message = "Loading plot ...", value = 0.5, {
       
-      c <- nameconvert[which(nameconvert$contrast == input$sysmex_variable),"name"]
-      listoftT <- study_data2()$listoftT
-      listoftT2 <- study_data2()$listoftT2
+      this_sysmex_variable <- input$sysmex_variable
       
-      tT <- as.data.frame(listoftT[[c]])
-      tT2 <- as.data.frame(listoftT2[[c]])
+      clinical2 = study_data2()$clinical2
+      counts2 = study_data2()$counts2 
+      
+      #Remove the NAs -  outliers
+      clinical2 <- clinical2[!is.na(clinical2[,this_sysmex_variable]),]
+      counts2 <- counts2[,row.names(clinical2)]
+      
+      
+      # Filter out outliers (3sd from the mean) - these are falsely driving the diffexp results
+      stdev  <- sd(clinical2[,this_sysmex_variable], na.rm = TRUE)
+      
+      #if value is 3 standard deviations away from the mean, make it NA
+      if (!is.na(stdev) && stdev > 0) {
+        mean_val <- mean(clinical2[,this_sysmex_variable], na.rm = TRUE)
+        outliers <- abs(clinical2[,this_sysmex_variable] - mean_val) > 3 * stdev
+        clinical2[outliers, this_sysmex_variable] <- NA
+        if(sum(outliers > 0)){
+          caption <- paste("Removed outliers",paste0(clinical2[outliers, "Study.ID"], collapse = ","))}
+        else{
+          caption <- NULL}
+      }
+      
+      
+      
+      tT <- as.data.frame(study_data2()$tT[[this_sysmex_variable]])
+      tT2 <- as.data.frame(study_data2()$tT2[[this_sysmex_variable]])
+      
+      
       
       incProgress(0.8)
       
       volcano <- ggplot(tT, aes(x = logFC, y = -log10(PValue))) +
         geom_point(aes(color = Legend)) +
-        scale_color_manual(values = c("Downregulated" = "blue", "Not Significant" = "grey", "Upregulated" = "red"))+
+        scale_color_manual(values = c("Downregulated" = "blue", "Not Significant" = "grey", "Upregulated" = "red"), drop = FALSE)+
         geom_hline(yintercept =-log10(max(tT2$PValue)),colour="black", linetype="dashed")+
-        geom_vline(xintercept =-1,colour="black", linetype="dashed")+
-        geom_vline(xintercept =1,colour="black", linetype="dashed")+
-        geom_text_repel(data = tT2[1:20,],
+        geom_text_repel(data = subset(tT2[1:30,]),
                         aes(label= gene_symbol),size = 4, box.padding = unit(0.35, "lines"),
                         point.padding = unit(0.3, "lines") ) +
         theme_bw(base_size = 18) + theme(legend.position = "bottom",
                                          legend.text = element_text(size = 14),
                                          legend.title = element_text(size = 16)) +
-        labs(title = paste0(input$study2,"\n",input$sysmex_variable))
+        labs(title = paste0(input$study2,"\n",input$sysmex_variable)) +
+        labs(caption = caption)
     })
     print(volcano)
     
   }) #close renderPlot volcano2
   
-}
+  
+  
+  
+  # ================================================================================== #
+  ## SERVER 3) GENE EXPRESSION (Boxplots) ===============================================
+  # ================================================================================== #
+  
+  ### Reactive expression to load the correct data ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+  study_data3 <- reactive({
+    req(input$study3)  # ensure input is not NULL
+    
+    withProgress(message = "Loading required data ...", value = 0.2, {
+      
+      if(input$study3 == "SHERLOCK - Brush"){
+        
+        clinical <- clinical_brush
+        counts <- counts_brush
+        counts_voom <- voom(counts_brush)
+        
+        this_sysmex_variable <- input$sysmex_variable3
+        
+        #Remove the NAs
+        clinical <- clinical[!is.na(clinical[,this_sysmex_variable]),]
+        counts <- counts_voom$E[,row.names(clinical)]
+        incProgress(0.7)
+        
+        print("test1")
+        print(head(clinical))
+        
+        list(
+          clinical2 = clinical,
+          counts2 = counts)
+      }
+      
+      else if(input$study3 == "SHERLOCK - Biopsy"){
+        
+        clinical <- clinical_biopt
+        counts <- counts_biopt
+        counts_voom <- voom(counts_biopt)
+        
+        this_sysmex_variable <- input$sysmex_variable3
+        
+        clinical <- clinical[!is.na(clinical[,this_sysmex_variable]),]
+        counts <- counts_voom$E[,row.names(clinical)]
+        incProgress(0.7)
+        
+        
+        list(
+          clinical2 = clinical,
+          counts2 = counts)
+      }
+      
+      
+      
+    }) #close progress message
+    
+  }) #close reactive study_data3
+  
+  ### Update selectizeInput for gene3  ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+  ### Include the ones with hgnc symbols and without
+  observe({
+    updateSelectizeInput(session, "gene3", choices = c(hgnc_symbols_db$SYMBOL, setdiff(row.names(counts), hgnc_symbols_db$GENEID)), server = TRUE)
+  }) 
+  
+  
+  
+  ### output$scatterplot3 Render scatterplots ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+  output$scatterplot3 <- renderPlot({
+    
+    
+    req(input$gene3)
+    req(input$sysmex_variable3)
+    
+    withProgress(message = "Creating boxplot...", value = 0.5, {
+      
+      
+      clinical2 = study_data3()$clinical2
+      counts2 = study_data3()$counts2 #these are voom counts!
+      this_sysmex_variable <- input$sysmex_variable3
+      gene <- input$gene3
+      
+      
+      
+      print("test2")
+      print(head(clinical2))
+      
+      gene_symbol <- ifelse(gene %in% hgnc_symbols_db$SYMBOL,
+                            hgnc_symbols_db[which(hgnc_symbols_db$SYMBOL == gene), "GENEID"],
+                            gene)
+      
+      
+      
+      
+      # Filter out outliers (3sd from the mean) - these are falsely driving the diffexp results
+      stdev  <- sd(clinical2[,this_sysmex_variable], na.rm = TRUE)
+      
+      #if value is 3 standard deviations away from the mean, make it NA
+      if (!is.na(stdev) && stdev > 0) {
+        mean_val <- mean(clinical2[,this_sysmex_variable], na.rm = TRUE)
+        outliers <- abs(clinical2[,this_sysmex_variable] - mean_val) > 3 * stdev
+        clinical2[outliers, this_sysmex_variable] <- NA
+        if(sum(outliers > 0)){
+          caption <- paste("Removed outliers",paste0(clinical2[outliers, "Study.ID"], collapse = ","))}
+        else{
+          caption <- NULL}
+      }
+      
+      
+      print(this_sysmex_variable)
+      print(clinical2[,this_sysmex_variable])
+      
+      scatterplot_data <- as.data.frame(cbind(sysmex_variable = clinical2[,this_sysmex_variable],
+                                              gene = counts2[gene_symbol,],
+                                              classification = clinical2$classification,
+                                              sample = clinical2$Study.ID))
+      
+      
+      scatterplot_theme <- theme(axis.title = element_text(size = 24),
+                                 axis.text = element_text(size = 24),
+                                 title = element_text(size = 20),
+                                 legend.text = element_text(size = 18),
+                                 legend.position = "bottom")
+      
+      
+      
+      
+      
+      #geom_point, split by disease
+      boxplotimage <- ggplot(scatterplot_data, aes(
+        x = as.numeric(sysmex_variable),
+        y = as.numeric(gene))) +
+        
+        theme_bw()+
+        scatterplot_theme +
+        geom_point(aes(colour=classification)) +
+        
+        
+        theme(axis.text.x = element_text(size = 18))+
+        labs(title = paste0(gene,"_vs_", this_sysmex_variable),
+             color = "Disease Severity" #legend title
+        ) +
+        scale_color_manual(values = c("Control" = "#00BA38",
+                                      "Mild-moderate COPD" = "#619CFF",
+                                      "Severe COPD" = "#F8766D"))+
+        ylab (label = gene) +
+        xlab (label = this_sysmex_variable) #+
+      # labs(caption = caption)
+      
+    }) #close withProgress
+    
+    print(boxplotimage)
+    
+  }) #Close render plot
+  
+  
+  
+  ### output$downloadboxplot3  -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+  
+  output$downloadscatterplot3<-downloadHandler(
+    
+    filename = function() {
+      paste0(input$gene3,"_data.csv")
+    },
+    content = function(file) { 
+      
+      
+      
+      clinical2 = study_data3()$clinical2
+      counts2 = study_data3()$counts2 #these are voom counts!
+      this_sysmex_variable <- input$sysmex_variable3
+      gene <- input$gene3
+      
+      gene_symbol <- ifelse(gene %in% hgnc_symbols_db$SYMBOL,
+                            hgnc_symbols_db[which(hgnc_symbols_db$SYMBOL == gene), "GENEID"],
+                            gene)
+      
+      
+      scatterplot_data <- as.data.frame(cbind(sysmex_variable = clinical2[,this_sysmex_variable],
+                                              gene = counts2[gene_symbol,],
+                                              classification = clinical2$classification,
+                                              sample = clinical2$Study.ID))
+      
+      
+      write.csv(scatterplot_data, file, row.names = T)
+    } #close content
+  ) #close downloadHandler
+  
+  
+}#close servere
 
 
 shinyApp(ui = ui, server = server)
