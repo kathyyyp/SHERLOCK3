@@ -76,6 +76,10 @@ counts_merged <- merge(counts_sk2, counts_sk3, by = "row.names")
 row.names(counts_merged) <- counts_merged[,1]
 counts_merged <- as.matrix(counts_merged[,-1])
 
+#21/11/2025 - realised that this clinical file is missing ecimal points for fev1/fvc column (postbodybox_fev1_fvc). Replacing it with correct numbers from most recent clinical file (Sherlock_database_07_25_Final.xlsx)
+# clinical_sk1_master <- readRDS(file.path(processed.data.dir, "SHERLOCK1", "clinical_sk1_master.rds"))
+raw_clinical <- as.data.frame(read_xlsx(file.path(data.dir,"raw","Sherlock_database_07_25_Final.xlsx"))) #319 SEO/patient IDs
+clinical_sherlock_master_preQC[,"postbodybox_fev1_fvc_post"] <- raw_clinical[match(clinical_sherlock_master_preQC$Study.ID,raw_clinical$class_incl_study_id),"postbodybox_fev1_fvc_post"] 
 
 
 
@@ -215,6 +219,8 @@ clinical_sk1_master <- cbind(clinical_sk1_master, batch = rep(1, nrow(clinical_s
 # "A_580"
 # "A_994"
 # "A_984"
+
+clinical_sk1_master[which(clinical_sk1_master$Study.ID == "A_1450"), "postbodybox_fev1_fvc_post"] <- 23.7354085603113 #missing from Sherlock_database_07_25_Final.xlsx clinical table but was in 25_08_20_SHERLOCk_1_2 mvdb.xlsx so got the data from 25_08_20_SHERLOCk_1_2 mvdb.xlsx
 
 
 # A2804 (SHERLOCK1) and SEO230 (SHERLOCK2) are the same patient - keep SEO230 in most cases
@@ -406,7 +412,7 @@ best_libsize_samples <- dup_patients_qc %>%
 # to drop (lower lib size)
 dup_samples_to_drop <- setdiff(dup_patients_qc$sample, best_libsize_samples)
 
-
+write.csv(dup_samples_to_drop, file.path(qc.dir, "dup_samples_to_drop.csv"))
 # > dup_samples_to_drop
 # [1] "LIB5426587_SAM24375559" "106076-002-014"         "106076-002-120"
 # [4] "107165-001-041"         "106076-002-009"         "106076-002-003"
@@ -415,7 +421,7 @@ dup_samples_to_drop <- setdiff(dup_patients_qc$sample, best_libsize_samples)
 
 #subset to exclude
 clinical_sk1_master <- clinical_sk1_master[-which(row.names(clinical_sk1_master) %in% dup_samples_to_drop),] #168 -> 167
-counts_sk1
+counts_sk1 <- counts_sk1[,row.names(clinical_sk1_master)] #167 patients
 
 clinical_brushbiopt_master <- clinical_brushbiopt_master[-which(row.names(clinical_brushbiopt_master) %in% dup_samples_to_drop),] #541 samples
 clinical_brush_master <- clinical_brushbiopt_master[which(clinical_brushbiopt_master$sampletype == "Brush"),] #270 samples
@@ -474,6 +480,7 @@ write.csv(counts_biopt_combat, file.path(combat.processed.data.dir,  "counts_bio
 saveRDS(clinical_sk1_master, file.path(processed.data.dir, "SHERLOCK1", "clinical_sk1_master.rds"))
 write.csv(clinical_sk1_master, file.path(processed.data.dir, "SHERLOCK1","clinical_sk1_master.csv"))
 
+
 counts_sk1 <- counts_sk1[,row.names(clinical_sk1_master)] #167 patients
 saveRDS(counts_sk1, file.path(processed.data.dir, "SHERLOCK1", "counts_sk1.rds"))
 write.csv(counts_sk1, file.path(processed.data.dir, "SHERLOCK1", "counts_sk1.csv"))
@@ -496,7 +503,7 @@ write.csv(counts_sk3_share, file.path(common.data.dir, "counts_sk3.csv"), row.na
 
 clinical_master <- rbind(cbind(clinical_sk1_master[which(row.names(clinical_sk1_master) %in% colnames(counts_sk1)),-which(colnames(clinical_sk1_master) == "rnaseq_id")]),
                          cbind(clinical_sk2_master[which(row.names(clinical_sk2_master) %in% colnames(counts_sk2_share)),], batch = 2),
-                         cbind(clinical_sk3_master[which(row.names(clinical_sk3_master) %in% colnames(counts_sk3_share)),], batch = 3)) #541 samples total
+                         cbind(clinical_sk3_master[which(row.names(clinical_sk3_master) %in% colnames(counts_sk3_share)),], batch = 3)) 
 
 write.csv(clinical_master, file.path(common.data.dir, "clinical_master.csv"), row.names = TRUE)
 
