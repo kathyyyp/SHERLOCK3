@@ -111,9 +111,14 @@ ui <- dashboardPage(
                          DTOutput("viewdemographics"),
                          column(width = 8, 
                                 fluidRow("Note - SHERLOCK2&3: 4 outliers were removed following QC. Sherlock1: All samples from ex-smokers") 
-                         ),
-                ) #show table
+                         )
+                ), #show table
                 
+                tabPanel("QC details",
+                         uiOutput("QCinfo")
+                         
+                )
+                                
               ) #close tabset Panel
               
               
@@ -331,8 +336,34 @@ server <- function(input, output, session){
     ) #close data table
   }) #close render DT
   
+  ### output$viewdemographics View patient demographics file ----------------------------------------------------------------------------------------------------------------------------------------------------------------------
   
-  
+  output$QCinfo <- renderUI({
+    if (input$study1 == "SHERLOCK1") {
+      HTML("Samples excluded:<br>
+      - A_2804: A2804 (SHERLOCK1) and SEO230 (SHERLOCK2) are the same patient - advised to keep SEO230 in most cases <br>
+      - LIB5426587_SAM24375559: Duplicated sample from patient A_1688. Kept LIB5426624_SAM24375596 due to greater library size <br>
+      - A_580, A_994, A_984: Patients were excluded from SHERLOCK study")
+    }
+      
+    else if (input$study1 == "SHERLOCK2&3") {
+        HTML("Samples excluded:<br>
+      - 106076-002-232, 106076-002-311, 106076-002-200, 106076-002-015: Excluded from SHERLOCK2 as <500,000 total reads <br>
+      - 107165-001-146: Excluded from SHERLOCK3 as sample is labelled as female but has high number of counts (3.129 CPM) for DDX3Y (male-specific gene on Y-chromosome) <br>
+      - 107165-001-016 and 107165-001-059 were derived from the same person (identical genotypes) but annotated as SEO267 and SEO265 respectively. Removed as possible sample switch. <br>
+      <br>
+      The below are duplicate samples from the same patient. Kept the sample with greater library size <br>
+      - 106076-002-014: Kept duplicate sample 107165-001-010, Patient SEO077 <br>
+      - 106076-002-120: Kept duplicate sample 107165-001-032, Patient SEO185 <br>
+      - 107165-001-041: Kept duplicate sample 106076-002-168, Patient SEO310 <br>
+      - 106076-002-009: Kept duplicate sample 107165-001-161, Patient SEO069 <br>
+      - 106076-002-003: Kept duplicate sample 107165-001-160, Patient SEO070 <br>
+      - 106076-002-017: Kept duplicate sample 107165-001-163, Patient SEO084 <br>
+      - 107165-001-079: Kept duplicate sample 106076-002-023, Patient SEO096 <br>
+      - 106076-002-159: Kept duplicate sample 107165-001-125, Patient SEO308 <br>
+      - 106076-002-199: Kept duplicate sample 107165-001-071, Patient SEO317")
+    } 
+  })
   
   # ================================================================================== #
   ## SERVER 2) DIFFERENTIAL EXPRESSION ===============================================
@@ -699,374 +730,381 @@ server <- function(input, output, session){
     } #close content
   ) #close downloadHandler
   
-  
-  # 
-  # 
-  # # ================================================================================== #
-  # ## SERVER 4) TF ANALYSIS ===========================================================
-  # # ================================================================================== #
-  # 
-  # ### Reactive expression to load the correct data ---------------------------------------------------------------------------------
-  # study_data4 <- reactive({
-  #   req(input$study4)  # ensure input is not NULL
-  #   
-  #   if(input$study4 == "SHERLOCK1 - Brush"){
-  #     
-  #     TF_results <- readRDS(file.path(output.dir, "tf_analysis", "sherlock1", "results", "TF_analysis_results.rds"))
-  #     clinical <- readRDS(file.path(data.dir, "processed", "SHERLOCK1", "clinical_sk1_simple.rds"))
-  #     listoftT = readRDS(file.path(output.dir, "tf_analysis", "sherlock1", "results", "listoftT.rds"))
-  #     listoftT2 = readRDS(file.path(output.dir, "tf_analysis", "sherlock1", "results", "listoftT2.rds"))
-  #     
-  #     
-  #     list(
-  #       TF_results = TF_results,
-  #       listoftT = listoftT,
-  #       listoftT2 = listoftT2,
-  #       clinical = clinical
-  #     )
-  #   }
-  #   
-  #   else if(input$study4 == "SHERLOCK2&3 - Brush"){
-  #     all_clinical <- readRDS(file.path(postQC.data.dir, "master","clinical_brushbiopt_master.csv"))
-  #     sherlock2_brush_clinical <- all_clinical[which(all_clinical$sampletype == "Brush"),]
-  #     TF_results <- readRDS(file.path(output.dir, "tf_analysis", "brush", "results", "TF_analysis_results.rds"))
-  #     listoftT = readRDS(file.path(output.dir, "tf_analysis", "brush", "results", "listoftT.rds"))
-  #     listoftT2 = readRDS(file.path(output.dir, "tf_analysis", "brush", "results", "listoftT2.rds"))
-  #     
-  #     names(listoftT2)[names(listoftT2) == "Mild.moderate.COPDvsControl"] <- "Mild.moderate.COPD - Control"
-  #     names(listoftT2)[names(listoftT2) == "Severe.COPDvsControl"] <- "Severe.COPD - Control"
-  #     names(listoftT2)[names(listoftT2) == "Severe.COPDvsMild.moderate.COPD"] <- "Severe.COPD - Mild.moderate.COPD"
-  #     
-  #     names(listoftT)[names(listoftT) == "Mild.moderate.COPDvsControl"] <- "Mild.moderate.COPD - Control"
-  #     names(listoftT)[names(listoftT) == "Severe.COPDvsControl"] <- "Severe.COPD - Control"
-  #     names(listoftT)[names(listoftT) == "Severe.COPDvsMild.moderate.COPD"] <- "Severe.COPD - Mild.moderate.COPD"
-  #     
-  #     list(
-  #       TF_results = TF_results,
-  #       listoftT = listoftT,
-  #       listoftT2 = listoftT2,
-  #       clinical = sherlock2_brush_clinical
-  #       
-  #     )
-  #   }
-  #   else if(input$study4 == "SHERLOCK2&3 - Biopsy"){
-  #     all_clinical <- readRDS(file.path(postQC.data.dir, "master","clinical_brushbiopt_master.csv"))
-  #     sherlock2_biopsy_clinical <- all_clinical[which(all_clinical$sampletype == "Biopt"),]
-  #     TF_results <- readRDS(file.path(output.dir, "tf_analysis", "biopt", "results", "TF_analysis_results.rds"))
-  #     listoftT = readRDS(file.path(output.dir, "tf_analysis", "biopt", "results", "listoftT.rds"))
-  #     listoftT2 = readRDS(file.path(output.dir, "tf_analysis", "biopt", "results", "listoftT2.rds"))
-  #     
-  #     names(listoftT2)[names(listoftT2) == "Mild.moderate.COPDvsControl"] <- "Mild.moderate.COPD - Control"
-  #     names(listoftT2)[names(listoftT2) == "Severe.COPDvsControl"] <- "Severe.COPD - Control"
-  #     names(listoftT2)[names(listoftT2) == "Severe.COPDvsMild.moderate.COPD"] <- "Severe.COPD - Mild.moderate.COPD"
-  #     
-  #     names(listoftT)[names(listoftT) == "Mild.moderate.COPDvsControl"] <- "Mild.moderate.COPD - Control"
-  #     names(listoftT)[names(listoftT) == "Severe.COPDvsControl"] <- "Severe.COPD - Control"
-  #     names(listoftT)[names(listoftT) == "Severe.COPDvsMild.moderate.COPD"] <- "Severe.COPD - Mild.moderate.COPD"
-  #     
-  #     list(
-  #       TF_results = TF_results,
-  #       listoftT = listoftT,
-  #       listoftT2 = listoftT2,
-  #       clinical = sherlock2_biopsy_clinical
-  #       
-  #     )
-  #   }
-  #   
-  #   else if(input$study4 == "SHERLOCK2&3 (Brush) & SHERLOCK1 - Commonly Activated TFs"){
-  #     Sherlock1_tT2 <- readRDS(file.path(output.dir, "tf_analysis", "sherlock1", "results", "listoftT2.rds"))
-  #     Sherlock2_tT2 <- readRDS(file.path(output.dir, "tf_analysis", "brush","results", "listoftT2.rds"))
-  #     
-  #     list(
-  #       Sherlock1_tT2 = Sherlock1_tT2,
-  #       Sherlock2_tT2 = Sherlock2_tT2
-  #     )
-  #     
-  #   } 
-  #   
-  #   
-  #   
-  # }) #close reactive study_data4
-  # 
-  # ### output$volcano4 Render volcano ---------------------------------------------------------------------------------
-  # output$volcano4 <- renderPlot({
-  #   
-  #   validate(
-  #     need(input$study4 != "SHERLOCK2&3 (Brush) & SHERLOCK1 - Commonly Activated TFs", 
-  #          "Go to Results tab to see overlapping TFs between SHERLOCK2&3 (Brush) and SHERLOCK1")
-  #   )
-  #   
-  #   withProgress(message = "Loading plot ...", value = 0.5, {
-  #     
-  #     c <-input$comparison4 #these files are saved as listoftT$mildmoderate - control instead of listoftT$contrast1
-  #     
-  #     listoftT <- study_data4()$listoftT
-  #     listoftT2 <- study_data4()$listoftT2
-  #     
-  #     tT <- as.data.frame(listoftT[[c]])
-  #     tT2 <- as.data.frame(listoftT2[[c]])
-  #     
-  #     tT$Legend <- ifelse(
-  #       tT$adj.P.Val < 0.05 & tT$logFC > 0, "Upregulated", 
-  #       ifelse(
-  #         tT$adj.P.Val < 0.05 & tT$logFC < -0, "Downregulated",
-  #         "Not Significant"))
-  #     
-  #     tT2$gene_symbol <- row.names(tT2)
-  #     
-  #     incProgress(0.8)
-  #     
-  #     
-  #     volcano <- ggplot(tT, aes(x = logFC, y = -log10(P.Value))) +
-  #       geom_point(aes(color = Legend)) +
-  #       scale_color_manual(values = c("Downregulated" = "blue", "Not Significant" = "grey", "Upregulated" = "red"))+
-  #       geom_hline(yintercept =-log10(max(tT2$P.Value)),colour="black", linetype="dashed")+
-  #       geom_text_repel(data = tT2[1:20,],
-  #                       aes(label= gene_symbol),size = 4, box.padding = unit(0.35, "lines"),
-  #                       point.padding = unit(0.3, "lines") ) +
-  #       theme_bw(base_size = 18) + theme(legend.position = "bottom",
-  #                                        legend.text = element_text(size = 14),
-  #                                        legend.title = element_text(size = 16)) +
-  #       labs(title = paste0(input$study4,"\n",input$comparison4))
-  #     
-  #     
-  #     
-  #   }) #close Progress message 
-  #   
-  #   print(volcano)
-  # }) #close renderPlot
-  # 
-  # ### output$results 4 Render list of tT2 TFs ---------------------------------------------------------------------------------
-  # output$table4 <- renderDT({
-  #   
-  #   withProgress(message = "Loading results ...", value = 0.5, {
-  #     
-  #     if(input$study4 == "SHERLOCK2&3 (Brush) & SHERLOCK1 - Commonly Activated TFs"){
-  #       
-  #       Sherlock1_tT2 <- study_data4()$Sherlock1_tT2
-  #       Sherlock2_tT2 <- study_data4()$Sherlock2_tT2
-  #       
-  #       #add _sherlock1 or 2 suffix after colnames so can differentiate the studies in the cbind table after
-  #       Sherlock1_tT2 <- lapply(Sherlock1_tT2, function(df) {  #apply function to each element of the list
-  #         colnames(df) <- paste0(colnames(df), "_Sherlock1")
-  #         df #return the modified df
-  #       })
-  #       
-  #       Sherlock2_tT2 <- lapply(Sherlock2_tT2, function(df) {  #apply function to each element of the list
-  #         colnames(df) <- paste0(colnames(df), "_Sherlock2")
-  #         df
-  #       })
-  #       
-  #       #get the overlapping TFs between hserlock1 and SHERLOCK2&3 
-  #       if(input$comparison4 == "Mild.moderate.COPD - Control"){
-  #         common1 <- intersect(row.names(Sherlock1_tT2[["Mild.moderate.COPDvsControl"]]), row.names(Sherlock2_tT2[["Mild.moderate.COPDvsControl"]]))
-  #         results_table <- cbind(Sherlock1_tT2[["Mild.moderate.COPDvsControl"]][common1,],Sherlock2_tT2[["Mild.moderate.COPDvsControl"]][common1,])
-  #       }
-  #       
-  #       else if(input$comparison4 == "Severe.COPD - Control"){
-  #         common2 <- intersect(row.names(Sherlock1_tT2[["Severe.COPDvsControl"]]), row.names(Sherlock2_tT2[["Severe.COPDvsControl"]]))
-  #         results_table <- cbind(Sherlock1_tT2[["Severe.COPDvsControl"]][common2,],Sherlock2_tT2[["Severe.COPDvsControl"]][common2,])
-  #       }
-  #       
-  #       else if(input$comparison4 == "Severe.COPD - Mild.moderate.COPD"){
-  #         common3 <- intersect(row.names(Sherlock1_tT2[["Severe.COPDvsMild.moderate.COPD"]]), row.names(Sherlock2_tT2[["Severe.COPDvsMild.moderate.COPD"]]))
-  #         results_table <- cbind(Sherlock1_tT2[["Severe.COPDvsMild.moderate.COPD"]][common3,],Sherlock2_tT2[["Severe.COPDvsMild.moderate.COPD"]][common3,])
-  #       }
-  #       
-  #       validate(
-  #         need(nrow(results_table) >= 1, "No overlapping TFs found")
-  #       )
-  #       
-  #     } #close main if statement (if overlap)
-  #     
-  #     
-  #     else{
-  #       results_list <- study_data4()$listoftT
-  #       results_table <- results_list[[input$comparison4]]
-  #     }
-  #   })
-  #   
-  #   #datatable
-  #   datatable(results_table,
-  #             extensions = c('Buttons'),
-  #             filter = list(position = "top", 
-  #                           clear = TRUE),
-  #             options = list(pageLength = 25,
-  #                            scrollX = TRUE,
-  #                            scrollY = "1000px",
-  #                            dom = 'Bfrtip', 
-  #                            buttons = c('copy', 'csv', 'excel')))
-  #   
-  # }) #close render DT
-  # 
-  # 
-  # ### Update selectizeInput for gene4  ---------------------------------------------------------------------------------
-  # 
-  # observe({
-  #   
-  #   if(input$study4 == "SHERLOCK2&3 (Brush) & SHERLOCK1 - Commonly Activated TFs"){
-  #     updateSelectizeInput(session, "gene4", choices = "not applicable",
-  #                          selected = "not applicable",
-  #                          server = FALSE)
-  #   }
-  #   
-  #   else{
-  #     listoftT <- study_data4()$listoftT[["Severe.COPD - Control"]] #listoftT and TF_results have same number of TFs, but sherlock1, SHERLOCK2&3 brush and sherlock3 biopsy have different numbers
-  #     updateSelectizeInput(session, "gene4", choices = row.names(listoftT), server = TRUE)
-  #   }
-  #   
-  # }) #close observe
-  # 
-  # 
-  # 
-  # 
-  # ### output$boxplot4 Render boxplot   ---------------------------------------------------------------------------------
-  # output$boxplot4 <- renderPlot({
-  #   
-  #   validate(
-  #     need(input$study4 != "SHERLOCK2&3 (Brush) & SHERLOCK1 - Commonly Activated TFs", 
-  #          "Go to Results tab to see overlapping TFs between SHERLOCK2&3 (Brush) and SHERLOCK1")
-  #   )
-  #   
-  #   withProgress(message = "Loading plot ...", value = 0.5, {
-  #     
-  #     
-  #     TF_results = study_data4()$TF_results
-  #     clinical = study_data4()$clinical
-  #     
-  #     
-  #     boxplot_data <- as.data.frame(cbind(tf_activity = t(TF_results[input$gene4,]),
-  #                                         group = clinical$classification))
-  #     
-  #     
-  #     colnames(boxplot_data)[1] <- "tf_activity"
-  #     
-  #     
-  #     my_comparisons <- combn(unique(clinical$classification), 2, simplify = FALSE)
-  #     
-  #     
-  #     x_order <- c("Control","Mild.moderate.COPD","Severe.COPD")
-  #     
-  #     
-  #     boxplot_data$tf_activity <- as.numeric(boxplot_data$tf_activity)
-  #     boxplot_data$group <- factor(boxplot_data$group, levels = x_order)
-  #     
-  #     
-  #     stat.table <- boxplot_data %>%
-  #       t_test(tf_activity ~ group,
-  #              comparisons = list(c("Severe.COPD", "Control"),
-  #                                 c("Mild.moderate.COPD", "Control"),
-  #                                 c("Severe.COPD", "Mild.moderate.COPD")
-  #              ))
-  #     
-  #     
-  #     stat.table<- stat.table %>%
-  #       add_xy_position(x = "group", dodge = 0.8)
-  #     
-  #     stat.table3 <- stat.table
-  #     
-  #     #replace stat.table p values with pvalues from diffexp
-  #     listoftT <- study_data4()$listoftT
-  #     stat.table3 <- cbind(stat.table3, resultsname = c("Severe.COPD - Control", "Mild.moderate.COPD - Control", "Severe.COPD - Mild.moderate.COPD"))
-  #     stat.table3[which(stat.table3$resultsname == "Severe.COPD - Control"),"p"] <- listoftT[["Severe.COPD - Control"]][input$gene4, "P.Value"]
-  #     stat.table3[which(stat.table3$resultsname == "Mild.moderate.COPD - Control"),"p"] <- listoftT[["Mild.moderate.COPD - Control"]][input$gene4, "P.Value"]
-  #     stat.table3[which(stat.table3$resultsname == "Severe.COPD - Mild.moderate.COPD"),"p"] <- listoftT[["Severe.COPD - Mild.moderate.COPD"]][input$gene4, "P.Value"]
-  #     stat.table3$p <- signif(as.numeric(stat.table3$p), digits = 4)
-  #     stat.table3$y.position <- max(boxplot_data[,"tf_activity"]) + 0.025*(max(boxplot_data[,"tf_activity"]))
-  #     stat.table3$y.position <- as.numeric(stat.table3$y.position)
-  #     
-  #     boxplot_theme <- theme(axis.title = element_text(size = 24),
-  #                            axis.text = element_text(size = 24),
-  #                            title = element_text(size = 20),
-  #                            legend.position = "None")
-  #     
-  #     
-  #     #boxplot
-  #     boxplotfinal <- ggplot(boxplot_data, aes(
-  #       x = factor(group, level = x_order),
-  #       y = tf_activity,
-  #       group = group)) +
-  #       
-  #       theme_bw()+
-  #       
-  #       boxplot_theme +
-  #       
-  #       geom_boxplot(position = position_dodge(1)) +
-  #       
-  #       geom_jitter(aes(color = group),
-  #                   alpha = 0.5,
-  #                   size = 2.5, 
-  #                   width = 0.2) +
-  #       
-  #       {if(nrow(stat.table) >0 )
-  #         stat_pvalue_manual(stat.table3,
-  #                            label = "p",
-  #                            tip.length = 0.01,
-  #                            bracket.nudge.y = c(0, 1, 1),
-  #                            size = 6)
-  #       } +
-  #       stat_summary(fun = mean, fill = "red",
-  #                    geom = "point", shape = 21, size =4,
-  #                    show.legend = TRUE) +
-  #       
-  #       
-  #       
-  #       theme(axis.text.x = element_text(size = 18))+
-  #       labs(title = paste(input$study4, "TF Activity:", input$gene4)
-  #            
-  #       ) +
-  #       ylab (label = "TF Activity Score") +
-  #       xlab (label = "Disease")
-  #     
-  #   }) #close message
-  #   
-  #   
-  #   print(boxplotfinal)
-  #   
-  # })
-  # 
-  # 
-  # 
-  # ### output$downloadboxplot 4  ---------------------------------------------------------------------------------
-  # output$downloadboxplot4<-downloadHandler(
-  #   
-  #   filename = function() {
-  #     paste0(input$gene4,"_data.csv")
-  #   },
-  #   content = function(file) { 
-  #     
-  #     validate(
-  #       need(input$study4 != "SHERLOCK2&3 (Brush) & SHERLOCK1 - Commonly Activated TFs", 
-  #            "Go to Results tab to see overlapping TFs between SHERLOCK2&3 (Brush) and SHERLOCK1")
-  #     )
-  #     
-  #     
-  #     TF_results = study_data4()$TF_results
-  #     clinical = study_data4()$clinical
-  #     
-  #     
-  #     boxplot_data <- as.data.frame(cbind(tf_activity = t(TF_results[input$gene4,]),
-  #                                         group = clinical$classification))
-  #     
-  #     
-  #     colnames(boxplot_data)[1] <- "tf_activity"
-  #     
-  # 
-  #     
-  #     my_comparisons <- combn(unique(clinical$classification), 2, simplify = FALSE)
-  #     
-  #     
-  #     x_order <- c("Control","Mild.moderate.COPD","Severe.COPD")
-  #     
-  #     
-  #     boxplot_data$tf_activity <- as.numeric(boxplot_data$tf_activity)
-  #     boxplot_data$group <- factor(boxplot_data$group, levels = x_order)
-  #     
-  #     
-  #     write.csv(boxplot_data,file, row.names = T)
-  #   } #close content
-  # ) #close download handler
-  # 
+
+
+
+  # ================================================================================== #
+  ## SERVER 4) TF ANALYSIS ===========================================================
+  # ================================================================================== #
+
+  ### Reactive expression to load the correct data ---------------------------------------------------------------------------------
+  study_data4 <- reactive({
+    req(input$study4)  # ensure input is not NULL
+
+    if(input$study4 == "SHERLOCK1 - Brush"){
+
+      clinical <- readRDS(file.path(data.dir, "processed", "SHERLOCK1", "clinical_sk1_simple.rds"))
+      TF_results <- readRDS(file.path(output.dir, "tf_analysis", "sherlock1", "results", "TF_analysis_results.rds"))
+      listoftT = readRDS(file.path(output.dir, "tf_analysis", "sherlock1", "results", "listoftT.rds"))
+      listoftT2 = readRDS(file.path(output.dir, "tf_analysis", "sherlock1", "results", "listoftT2.rds"))
+      
+      names(listoftT2)[names(listoftT2) == "Mild.moderate.COPDvsControl"] <- "Mild.moderate.COPD - Control"
+      names(listoftT2)[names(listoftT2) == "Severe.COPDvsControl"] <- "Severe.COPD - Control"
+      names(listoftT2)[names(listoftT2) == "Severe.COPDvsMild.moderate.COPD"] <- "Severe.COPD - Mild.moderate.COPD"
+      
+      names(listoftT)[names(listoftT) == "Mild.moderate.COPDvsControl"] <- "Mild.moderate.COPD - Control"
+      names(listoftT)[names(listoftT) == "Severe.COPDvsControl"] <- "Severe.COPD - Control"
+      names(listoftT)[names(listoftT) == "Severe.COPDvsMild.moderate.COPD"] <- "Severe.COPD - Mild.moderate.COPD"
+
+      list(
+        TF_results = TF_results,
+        listoftT = listoftT,
+        listoftT2 = listoftT2,
+        clinical = clinical
+      )
+    }
+
+    else if(input$study4 == "SHERLOCK2&3 - Brush"){
+      all_clinical <- readRDS(file.path(postQC.data.dir, "master","clinical_brushbiopt_master.rds"))
+      sherlock2_brush_clinical <- all_clinical[which(all_clinical$sampletype == "Brush"),]
+      TF_results <- readRDS(file.path(output.dir, "tf_analysis", "brush", "results", "TF_analysis_results.rds"))
+      listoftT = readRDS(file.path(output.dir, "tf_analysis", "brush", "results", "listoftT.rds"))
+      listoftT2 = readRDS(file.path(output.dir, "tf_analysis", "brush", "results", "listoftT2.rds"))
+
+      names(listoftT2)[names(listoftT2) == "Mild.moderate.COPDvsControl"] <- "Mild.moderate.COPD - Control"
+      names(listoftT2)[names(listoftT2) == "Severe.COPDvsControl"] <- "Severe.COPD - Control"
+      names(listoftT2)[names(listoftT2) == "Severe.COPDvsMild.moderate.COPD"] <- "Severe.COPD - Mild.moderate.COPD"
+
+      names(listoftT)[names(listoftT) == "Mild.moderate.COPDvsControl"] <- "Mild.moderate.COPD - Control"
+      names(listoftT)[names(listoftT) == "Severe.COPDvsControl"] <- "Severe.COPD - Control"
+      names(listoftT)[names(listoftT) == "Severe.COPDvsMild.moderate.COPD"] <- "Severe.COPD - Mild.moderate.COPD"
+
+      list(
+        TF_results = TF_results,
+        listoftT = listoftT,
+        listoftT2 = listoftT2,
+        clinical = sherlock2_brush_clinical
+
+      )
+    }
+    else if(input$study4 == "SHERLOCK2&3 - Biopsy"){
+      all_clinical <- readRDS(file.path(postQC.data.dir, "master","clinical_brushbiopt_master.rds"))
+      sherlock3_biopsy_clinical <- all_clinical[which(all_clinical$sampletype == "Biopt"),]
+      TF_results <- readRDS(file.path(output.dir, "tf_analysis", "biopt", "results", "TF_analysis_results.rds"))
+      listoftT = readRDS(file.path(output.dir, "tf_analysis", "biopt", "results", "listoftT.rds"))
+      listoftT2 = readRDS(file.path(output.dir, "tf_analysis", "biopt", "results", "listoftT2.rds"))
+
+      names(listoftT2)[names(listoftT2) == "Mild.moderate.COPDvsControl"] <- "Mild.moderate.COPD - Control"
+      names(listoftT2)[names(listoftT2) == "Severe.COPDvsControl"] <- "Severe.COPD - Control"
+      names(listoftT2)[names(listoftT2) == "Severe.COPDvsMild.moderate.COPD"] <- "Severe.COPD - Mild.moderate.COPD"
+
+      names(listoftT)[names(listoftT) == "Mild.moderate.COPDvsControl"] <- "Mild.moderate.COPD - Control"
+      names(listoftT)[names(listoftT) == "Severe.COPDvsControl"] <- "Severe.COPD - Control"
+      names(listoftT)[names(listoftT) == "Severe.COPDvsMild.moderate.COPD"] <- "Severe.COPD - Mild.moderate.COPD"
+
+      list(
+        TF_results = TF_results,
+        listoftT = listoftT,
+        listoftT2 = listoftT2,
+        clinical = sherlock3_biopsy_clinical
+
+      )
+    }
+
+    else if(input$study4 == "SHERLOCK2&3 (Brush) & SHERLOCK1 - Commonly Activated TFs"){
+      Sherlock1_tT2 <- readRDS(file.path(output.dir, "tf_analysis", "sherlock1", "results", "listoftT2.rds"))
+      Sherlock3_tT2 <- readRDS(file.path(output.dir, "tf_analysis", "brush","results", "listoftT2.rds"))
+
+      list(
+        Sherlock1_tT2 = Sherlock1_tT2,
+        Sherlock3_tT2 = Sherlock3_tT2
+      )
+
+    }
+
+
+
+  }) #close reactive study_data4
+
+  ### output$volcano4 Render volcano ---------------------------------------------------------------------------------
+  output$volcano4 <- renderPlot({
+
+    validate(
+      need(input$study4 != "SHERLOCK2&3 (Brush) & SHERLOCK1 - Commonly Activated TFs",
+           "Go to Results tab to see overlapping TFs between SHERLOCK2&3 (Brush) and SHERLOCK1")
+    )
+
+    withProgress(message = "Loading plot ...", value = 0.5, {
+
+      c <-input$comparison4 #these files are saved as listoftT$mildmoderate - control instead of listoftT$contrast1
+
+      listoftT <- study_data4()$listoftT
+      listoftT2 <- study_data4()$listoftT2
+
+      tT <- as.data.frame(listoftT[[c]])
+      tT2 <- as.data.frame(listoftT2[[c]])
+
+      tT$Legend <- ifelse(
+        tT$adj.P.Val < 0.05 & tT$logFC > 0, "Upregulated",
+        ifelse(
+          tT$adj.P.Val < 0.05 & tT$logFC < -0, "Downregulated",
+          "Not Significant"))
+
+      tT2$gene_symbol <- row.names(tT2)
+
+      incProgress(0.8)
+
+
+      volcano <- ggplot(tT, aes(x = logFC, y = -log10(P.Value))) +
+        geom_point(aes(color = Legend)) +
+        scale_color_manual(values = c("Downregulated" = "blue", "Not Significant" = "grey", "Upregulated" = "red"))+
+        geom_hline(yintercept =-log10(max(tT2$P.Value)),colour="black", linetype="dashed")+
+        geom_text_repel(data = tT2[1:20,],
+                        aes(label= gene_symbol),size = 4, box.padding = unit(0.35, "lines"),
+                        point.padding = unit(0.3, "lines") ) +
+        theme_bw(base_size = 18) + theme(legend.position = "bottom",
+                                         legend.text = element_text(size = 14),
+                                         legend.title = element_text(size = 16)) +
+        labs(title = paste0(input$study4,"\n",input$comparison4))
+
+
+
+    }) #close Progress message
+
+    print(volcano)
+  }) #close renderPlot
+
+  ### output$results 4 Render list of tT2 TFs ---------------------------------------------------------------------------------
+  output$table4 <- renderDT({
+
+    withProgress(message = "Loading results ...", value = 0.5, {
+
+      if(input$study4 == "SHERLOCK2&3 (Brush) & SHERLOCK1 - Commonly Activated TFs"){
+
+        Sherlock1_tT2 <- study_data4()$Sherlock1_tT2
+        Sherlock3_tT2 <- study_data4()$Sherlock3_tT2
+
+        #add _sherlock1 or 2 suffix after colnames so can differentiate the studies in the cbind table after
+        Sherlock1_tT2 <- lapply(Sherlock1_tT2, function(df) {  #apply function to each element of the list
+          colnames(df) <- paste0(colnames(df), "_Sherlock1")
+          df #return the modified df
+        })
+
+        Sherlock3_tT2 <- lapply(Sherlock3_tT2, function(df) {  #apply function to each element of the list
+          colnames(df) <- paste0(colnames(df), "_Sherlock3")
+          df
+        })
+
+        #get the overlapping TFs between hserlock1 and SHERLOCK2&3
+        if(input$comparison4 == "Mild.moderate.COPD - Control"){
+          common1 <- intersect(row.names(Sherlock1_tT2[["Mild.moderate.COPDvsControl"]]), row.names(Sherlock3_tT2[["Mild.moderate.COPDvsControl"]]))
+          results_table <- cbind(Sherlock1_tT2[["Mild.moderate.COPDvsControl"]][common1,],Sherlock3_tT2[["Mild.moderate.COPDvsControl"]][common1,])
+        }
+
+        else if(input$comparison4 == "Severe.COPD - Control"){
+          common2 <- intersect(row.names(Sherlock1_tT2[["Severe.COPDvsControl"]]), row.names(Sherlock3_tT2[["Severe.COPDvsControl"]]))
+          results_table <- cbind(Sherlock1_tT2[["Severe.COPDvsControl"]][common2,],Sherlock3_tT2[["Severe.COPDvsControl"]][common2,])
+        }
+
+        else if(input$comparison4 == "Severe.COPD - Mild.moderate.COPD"){
+          common3 <- intersect(row.names(Sherlock1_tT2[["Severe.COPDvsMild.moderate.COPD"]]), row.names(Sherlock3_tT2[["Severe.COPDvsMild.moderate.COPD"]]))
+          results_table <- cbind(Sherlock1_tT2[["Severe.COPDvsMild.moderate.COPD"]][common3,],Sherlock3_tT2[["Severe.COPDvsMild.moderate.COPD"]][common3,])
+        }
+
+        validate(
+          need(nrow(results_table) >= 1, "No overlapping TFs found")
+        )
+
+      } #close main if statement (if overlap)
+
+
+      else{
+        results_list <- study_data4()$listoftT
+        results_table <- results_list[[input$comparison4]]
+      }
+    })
+
+    #datatable
+    datatable(results_table,
+              extensions = c('Buttons'),
+              filter = list(position = "top",
+                            clear = TRUE),
+              options = list(pageLength = 25,
+                             scrollX = TRUE,
+                             scrollY = "1000px",
+                             dom = 'Bfrtip',
+                             buttons = c('copy', 'csv', 'excel')))
+
+  }) #close render DT
+
+
+  ### Update selectizeInput for gene4  ---------------------------------------------------------------------------------
+
+  observe({
+
+    if(input$study4 == "SHERLOCK2&3 (Brush) & SHERLOCK1 - Commonly Activated TFs"){
+      updateSelectizeInput(session, "gene4", choices = "not applicable",
+                           selected = "not applicable",
+                           server = FALSE)
+    }
+
+    else{
+      listoftT <- study_data4()$listoftT[["Severe.COPD - Control"]] #listoftT and TF_results have same number of TFs, but sherlock1, SHERLOCK2&3 brush and sherlock3 biopsy have different numbers
+      updateSelectizeInput(session, "gene4", choices = row.names(listoftT), server = TRUE)
+    }
+
+  }) #close observe
+
+
+
+
+  ### output$boxplot4 Render boxplot   ---------------------------------------------------------------------------------
+  output$boxplot4 <- renderPlot({
+
+    validate(
+      need(input$study4 != "SHERLOCK2&3 (Brush) & SHERLOCK1 - Commonly Activated TFs",
+           "Go to Results tab to see overlapping TFs between SHERLOCK2&3 (Brush) and SHERLOCK1")
+    )
+
+    withProgress(message = "Loading plot ...", value = 0.5, {
+
+
+      TF_results = study_data4()$TF_results
+      clinical = study_data4()$clinical
+
+
+      boxplot_data <- as.data.frame(cbind(tf_activity = t(TF_results[input$gene4,]),
+                                          group = clinical$classification))
+
+
+      colnames(boxplot_data)[1] <- "tf_activity"
+
+
+      my_comparisons <- combn(unique(clinical$classification), 2, simplify = FALSE)
+
+
+      x_order <- c("Control","Mild.moderate.COPD","Severe.COPD")
+
+
+      boxplot_data$tf_activity <- as.numeric(boxplot_data$tf_activity)
+      boxplot_data$group <- factor(boxplot_data$group, levels = x_order)
+
+
+      stat.table <- boxplot_data %>%
+        t_test(tf_activity ~ group,
+               comparisons = list(c("Severe.COPD", "Control"),
+                                  c("Mild.moderate.COPD", "Control"),
+                                  c("Severe.COPD", "Mild.moderate.COPD")
+               ))
+
+
+      stat.table<- stat.table %>%
+        add_xy_position(x = "group", dodge = 0.8)
+
+      stat.table3 <- stat.table
+
+      #replace stat.table p values with pvalues from diffexp
+      listoftT <- study_data4()$listoftT
+      stat.table3 <- cbind(stat.table3, resultsname = c("Severe.COPD - Control", "Mild.moderate.COPD - Control", "Severe.COPD - Mild.moderate.COPD"))
+      stat.table3[which(stat.table3$resultsname == "Severe.COPD - Control"),"p"] <- listoftT[["Severe.COPD - Control"]][input$gene4, "P.Value"]
+      stat.table3[which(stat.table3$resultsname == "Mild.moderate.COPD - Control"),"p"] <- listoftT[["Mild.moderate.COPD - Control"]][input$gene4, "P.Value"]
+      stat.table3[which(stat.table3$resultsname == "Severe.COPD - Mild.moderate.COPD"),"p"] <- listoftT[["Severe.COPD - Mild.moderate.COPD"]][input$gene4, "P.Value"]
+      stat.table3$p <- signif(as.numeric(stat.table3$p), digits = 4)
+      stat.table3$y.position <- max(boxplot_data[,"tf_activity"]) + 0.025*(max(boxplot_data[,"tf_activity"]))
+      stat.table3$y.position <- as.numeric(stat.table3$y.position)
+
+      boxplot_theme <- theme(axis.title = element_text(size = 24),
+                             axis.text = element_text(size = 24),
+                             title = element_text(size = 20),
+                             legend.position = "None")
+
+
+      #boxplot
+      boxplotfinal <- ggplot(boxplot_data, aes(
+        x = factor(group, level = x_order),
+        y = tf_activity,
+        group = group)) +
+
+        theme_bw()+
+
+        boxplot_theme +
+
+        geom_boxplot(position = position_dodge(1)) +
+
+        geom_jitter(aes(color = group),
+                    alpha = 0.5,
+                    size = 2.5,
+                    width = 0.2) +
+
+        {if(nrow(stat.table) >0 )
+          stat_pvalue_manual(stat.table3,
+                             label = "p",
+                             tip.length = 0.01,
+                             bracket.nudge.y = c(0, 1, 1),
+                             size = 6)
+        } +
+        stat_summary(fun = mean, fill = "red",
+                     geom = "point", shape = 21, size =4,
+                     show.legend = TRUE) +
+
+
+
+        theme(axis.text.x = element_text(size = 18))+
+        labs(title = paste(input$study4, "TF Activity:", input$gene4)
+
+        ) +
+        ylab (label = "TF Activity Score") +
+        xlab (label = "Disease")
+
+    }) #close message
+
+
+    print(boxplotfinal)
+
+  })
+
+
+
+  ### output$downloadboxplot 4  ---------------------------------------------------------------------------------
+  output$downloadboxplot4<-downloadHandler(
+
+    filename = function() {
+      paste0(input$gene4,"_data.csv")
+    },
+    content = function(file) {
+
+      validate(
+        need(input$study4 != "SHERLOCK2&3 (Brush) & SHERLOCK1 - Commonly Activated TFs",
+             "Go to Results tab to see overlapping TFs between SHERLOCK2&3 (Brush) and SHERLOCK1")
+      )
+
+
+      TF_results = study_data4()$TF_results
+      clinical = study_data4()$clinical
+
+
+      boxplot_data <- as.data.frame(cbind(tf_activity = t(TF_results[input$gene4,]),
+                                          group = clinical$classification))
+
+
+      colnames(boxplot_data)[1] <- "tf_activity"
+
+
+
+      my_comparisons <- combn(unique(clinical$classification), 2, simplify = FALSE)
+
+
+      x_order <- c("Control","Mild.moderate.COPD","Severe.COPD")
+
+
+      boxplot_data$tf_activity <- as.numeric(boxplot_data$tf_activity)
+      boxplot_data$group <- factor(boxplot_data$group, levels = x_order)
+
+
+      write.csv(boxplot_data,file, row.names = T)
+    } #close content
+  ) #close download handler
+
   
   # ================================================================================== #
   ## SERVER 5) Cell Decon ===========================================================
