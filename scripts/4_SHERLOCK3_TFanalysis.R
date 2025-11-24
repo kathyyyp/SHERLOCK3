@@ -386,7 +386,7 @@ cat("Starting 7.  VALIDATION WITH SHERLOCK1", Sys.time(), "\n")
 
 
 counts <- readRDS(file.path(processed.data.dir, "SHERLOCK1", "counts_sk1.rds"))
-clinical <- readRDS(file.path(processed.data.dir, "SHERLOCK1", "clinical_sk1_master.rds"))
+clinical <- readRDS(file.path(processed.data.dir, "SHERLOCK1", "clinical_sk1_simple.rds"))
 
 tf.results.dir <- file.path(validation.tf.dir, "results")
 if(!exists(tf.results.dir)) dir.create(tf.results.dir)
@@ -559,10 +559,10 @@ dev.off()
 
 
 design <- model.matrix(
-  ~0 + classification + age + gender + packyears, ##all sherlock1 are ex smokers
+  ~0 + classification + age + sex + packyears, ##all sherlock1 are ex smokers
   data = clinical)  # clinical$classificationation is your grouping factor
 
-colnames(design)[1:3] = c("Non_COPD", "mCOPD", "sCOPD")
+colnames(design)[1:3] = c("Control", "Mild.moderate.COPD", "Severe.COPD")
 
 # Fit the linear model to TF activity scores
 fit <- lmFit(TF_analysis_results,
@@ -570,9 +570,9 @@ fit <- lmFit(TF_analysis_results,
 
 
 cont.matrix <- makeContrasts(
-  test1 = mCOPD - Non_COPD,
-  test2 = sCOPD - Non_COPD,
-  test3 = sCOPD - mCOPD,
+  test1 = Mild.moderate.COPD - Control,
+  test2 = Severe.COPD - Control,
+  test3 = Severe.COPD - Mild.moderate.COPD,
   levels = design)
 
 # Apply empirical Bayes moderation
@@ -591,9 +591,10 @@ tT_2 <- topTable(fit2_2, adjust="BH", sort.by="P", number=nrow(fit2_2))
 tT_3 <- topTable(fit2_3, adjust="BH", sort.by="P", number=nrow(fit2_3))
 
 
-listoftT <- list("mCOPDvsNon_COPD" = tT_1,
-                 "sCOPDvsNon_COPD" = tT_2,
-                 "sCOPDvsmCOPD" = tT_3)
+
+listoftT <- list("Mild.moderate.COPDvsControl" = tT_1, 
+                 "Severe.COPDvsControl" = tT_2, 
+                 "Severe.COPDvsMild.moderate.COPD" = tT_3)
 
 listoftT2 <- list()
 listofvolcano <- list()
@@ -652,14 +653,14 @@ cat("END OF THIS JOB", Sys.time(), "\n")
 
 
 # ================================================================================== #
-# 8. SHERLOCK1 VS SHERLOCK2 TF RESULTS =============================================
+# 8. SHERLOCK1 VS SHERLOCK3 TF RESULTS =============================================
 # ================================================================================== #
 ## Load SHERLOCK1 TF and SHERLOCK2 TF results
 Sherlock1_tT2 <- readRDS(file.path(output.dir, "tf_analysis", "sherlock1", "results", "listoftT2.rds"))
 
 
-Sherlock2_tT2 <- readRDS(file.path(output.dir, "tf_analysis", "brush","results", "listoftT2.rds"))
-# Sherlock2_tT2 <- readRDS(file.path(output.dir, "tf_analysis", "brush_exsmoker","results", "listoftT2.rds"))
+Sherlock3_tT2 <- readRDS(file.path(output.dir, "tf_analysis", "brush","results", "listoftT2.rds"))
+# Sherlock3_tT2 <- readRDS(file.path(output.dir, "tf_analysis", "brush_exsmoker","results", "listoftT2.rds"))
 
 
 
@@ -681,20 +682,20 @@ pdf(file= file.path(tf.venn.dir, paste0("tf_validation_venn_",direction,".pdf"))
 
 # Venn diagram
 x <- list(SHERLOCK1 = row.names(Sherlock1_tT2[["mCOPDvsNon_COPD"]][which(Sherlock1_tT2[["mCOPDvsNon_COPD"]]$Legend == direction),]),
-          SHERLOCK2 = row.names(Sherlock2_tT2[["Mild.moderate.COPDvsControl"]][which(Sherlock2_tT2[["Mild.moderate.COPDvsControl"]]$Legend == direction),]))
+          SHERLOCK2 = row.names(Sherlock3_tT2[["Mild.moderate.COPDvsControl"]][which(Sherlock3_tT2[["Mild.moderate.COPDvsControl"]]$Legend == direction),]))
 
 if(all(sapply(x,function(i) length(i))) != 0){
 ggvenn(x, stroke_size = 1.5) + ggtitle(paste("Mild.moderate.COPD - Control:", direction))}
 
 x <- list(SHERLOCK1 = row.names(Sherlock1_tT2[["sCOPDvsNon_COPD"]][which(Sherlock1_tT2[["sCOPDvsNon_COPD"]]$Legend == direction),]),
-          SHERLOCK2 = row.names(Sherlock2_tT2[["Severe.COPDvsControl"]][which(Sherlock2_tT2[["Severe.COPDvsControl"]]$Legend == direction),]))
+          SHERLOCK2 = row.names(Sherlock3_tT2[["Severe.COPDvsControl"]][which(Sherlock3_tT2[["Severe.COPDvsControl"]]$Legend == direction),]))
 
 if(all(sapply(x,function(i) length(i))) != 0){
 print(ggvenn(x, stroke_size = 1.5) + ggtitle(paste("Severe.COPD - Control:", direction)))}
 
 
 x <- list(SHERLOCK1 = row.names(Sherlock1_tT2[["sCOPDvsmCOPD"]][which(Sherlock1_tT2[["sCOPDvsmCOPD"]]$Legend == direction),]),
-          SHERLOCK2 = row.names(Sherlock2_tT2[["Severe.COPDvsMild.moderate.COPD"]][which(Sherlock2_tT2[["Severe.COPDvsMild.moderate.COPD"]]$Legend == direction),]))
+          SHERLOCK2 = row.names(Sherlock3_tT2[["Severe.COPDvsMild.moderate.COPD"]][which(Sherlock3_tT2[["Severe.COPDvsMild.moderate.COPD"]]$Legend == direction),]))
 
 if(all(sapply(x,function(i) length(i))) != 0){
 print(ggvenn(x, stroke_size = 1.5) + ggtitle(paste("Severe.COPD - Mild.moderate.COPD:", direction)))}
@@ -705,35 +706,35 @@ dev.off()
 # ================================================================================== #
 # 8.2. COMMON LIST =================================================================
 # ================================================================================== #
-write.csv(intersect(row.names(Sherlock1_tT2[["mCOPDvsNon_COPD"]][which(Sherlock1_tT2[["mCOPDvsNon_COPD"]]$Legend == direction),]),
-                    row.names(Sherlock2_tT2[["Mild.moderate.COPDvsControl"]][which(Sherlock2_tT2[["Mild.moderate.COPDvsControl"]]$Legend == direction),])),
+write.csv(intersect(row.names(Sherlock1_tT2[["Mild.moderate.COPDvsControl"]][which(Sherlock1_tT2[["Mild.moderate.COPDvsControl"]]$Legend == direction),]),
+                    row.names(Sherlock3_tT2[["Mild.moderate.COPDvsControl"]][which(Sherlock3_tT2[["Mild.moderate.COPDvsControl"]]$Legend == direction),])),
           file.path(tf.venn.dir,paste0("Common_Mild.moderate.COPDvsControl_",direction,".csv")))
 
-write.csv(intersect(row.names(Sherlock1_tT2[["sCOPDvsNon_COPD"]][which(Sherlock1_tT2[["sCOPDvsNon_COPD"]]$Legend == direction),]),
-                    row.names(Sherlock2_tT2[["Severe.COPDvsControl"]][which(Sherlock2_tT2[["Severe.COPDvsControl"]]$Legend == direction),])),
+write.csv(intersect(row.names(Sherlock1_tT2[["Severe.COPDvsControl"]][which(Sherlock1_tT2[["Severe.COPDvsControl"]]$Legend == direction),]),
+                    row.names(Sherlock3_tT2[["Severe.COPDvsControl"]][which(Sherlock3_tT2[["Severe.COPDvsControl"]]$Legend == direction),])),
           file.path(tf.venn.dir,paste0("Common_Severe.COPDvsControl_",direction,".csv")))
 
-write.csv(intersect(row.names(Sherlock1_tT2[["sCOPDvsmCOPD"]][which(Sherlock1_tT2[["sCOPDvsmCOPD"]]$Legend == direction),]),
-                    row.names(Sherlock2_tT2[["Severe.COPDvsMild.moderate.COPD"]][which(Sherlock2_tT2[["Severe.COPDvsMild.moderate.COPD"]]$Legend == direction),])),
+write.csv(intersect(row.names(Sherlock1_tT2[["Severe.COPDvsMild.moderate.COPD"]][which(Sherlock1_tT2[["Severe.COPDvsMild.moderate.COPD"]]$Legend == direction),]),
+                    row.names(Sherlock3_tT2[["Severe.COPDvsMild.moderate.COPD"]][which(Sherlock3_tT2[["Severe.COPDvsMild.moderate.COPD"]]$Legend == direction),])),
           file.path(tf.venn.dir,paste0("Common_Severe.COPDvsMild.moderate.COPD_",direction,".csv")))
 }
 
 # Common - not seperated by upregulated and downregulated
-common1 <- intersect(row.names(Sherlock1_tT2[["mCOPDvsNon_COPD"]]), row.names(Sherlock2_tT2[["Mild.moderate.COPDvsControl"]]))
+common1 <- intersect(row.names(Sherlock1_tT2[["Mild.moderate.COPDvsControl"]]), row.names(Sherlock3_tT2[["Mild.moderate.COPDvsControl"]]))
 if(length(common1) >0){
-write.csv(cbind(Sherlock1_tT2[["mCOPDvsNon_COPD"]][common1,],Sherlock2_tT2[["Mild.moderate.COPDvsControl"]][common1,]),
+write.csv(cbind(Sherlock1_tT2[["Mild.moderate.COPDvsControl"]][common1,],Sherlock3_tT2[["Mild.moderate.COPDvsControl"]][common1,]),
                 file.path(tf.venn.dir,"Common_Mild.moderate.COPDvsControl.csv"))
 }
 
-common2 <- intersect(row.names(Sherlock1_tT2[["sCOPDvsNon_COPD"]]), row.names(Sherlock2_tT2[["Severe.COPDvsControl"]]))
+common2 <- intersect(row.names(Sherlock1_tT2[["Severe.COPDvsControl"]]), row.names(Sherlock3_tT2[["Severe.COPDvsControl"]]))
 if(length(common2) >0){
-write.csv(cbind(Sherlock1_tT2[["sCOPDvsNon_COPD"]][common2,],Sherlock2_tT2[["Severe.COPDvsControl"]][common2,]),
+write.csv(cbind(Sherlock1_tT2[["Severe.COPDvsControl"]][common2,],Sherlock3_tT2[["Severe.COPDvsControl"]][common2,]),
           file.path(tf.venn.dir,"Common_Severe.COPDvsControl.csv"))
 }
 
-common3 <- intersect(row.names(Sherlock1_tT2[["sCOPDvsmCOPD"]]), row.names(Sherlock2_tT2[["Severe.COPDvsMild.moderate.COPD"]]))
+common3 <- intersect(row.names(Sherlock1_tT2[["Severe.COPDvsMild.moderate.COPD"]]), row.names(Sherlock3_tT2[["Severe.COPDvsMild.moderate.COPD"]]))
 if(length(common3) >0){
-write.csv(cbind(Sherlock1_tT2[["sCOPDvsmCOPD"]][common3,],Sherlock2_tT2[["Severe.COPDvsMild.moderate.COPD"]][common3,]),
+write.csv(cbind(Sherlock1_tT2[["Severe.COPDvsMild.moderate.COPD"]][common3,],Sherlock3_tT2[["Severe.COPDvsMild.moderate.COPD"]][common3,]),
           file.path(tf.venn.dir,"Common_Severe.COPDvsMild.moderate.COPD.csv"))
 }
 
@@ -743,24 +744,24 @@ write.csv(cbind(Sherlock1_tT2[["sCOPDvsmCOPD"]][common3,],Sherlock2_tT2[["Severe
 # ================================================================================== #
 
 #LOAD Clinical files
-sherlock1_clinical <- readRDS(file.path(data.dir, "processed", "SHERLOCK1", "clinical.rds"))
-all_clinical <- readRDS(file.path(data.dir, "processed", "datawrangling_qc", "clinical.rds"))
-sherlock2_brush_clinical <- all_clinical[which(all_clinical$sampletype == "Brush"),]
+sherlock1_clinical <- readRDS(file.path(data.dir, "processed", "SHERLOCK1", "clinical_sk1_simple.rds"))
+all_clinical<- readRDS(file.path(postQC.data.dir, "clinical_brushbiopt_simple.rds"))
+sherlock3_brush_clinical <- all_clinical[which(all_clinical$sampletype == "Brush"),]
 
 #LOAD TF activity scores for all genes
 sherlock1_TF_results <- readRDS(file.path(output.dir, "tf_analysis", "sherlock1", "results", "TF_analysis_results.rds"))
-sherlock2_TF_results <- readRDS(file.path(output.dir, "tf_analysis", "brush", "results", "TF_analysis_results.rds"))
-# sherlock2_TF_results <- readRDS(file.path(output.dir, "tf_analysis", "brush_exsmoker", "results", "TF_analysis_results.rds"))
+sherlock3_TF_results <- readRDS(file.path(output.dir, "tf_analysis", "brush", "results", "TF_analysis_results.rds"))
+# sherlock3_TF_results <- readRDS(file.path(output.dir, "tf_analysis", "brush_exsmoker", "results", "TF_analysis_results.rds"))
 
 #LOAD tT2 genes
 Sherlock1_tT2 <- readRDS(file.path(output.dir, "tf_analysis", "sherlock1", "results", "listoftT2.rds"))
-Sherlock2_tT2 <- readRDS(file.path(output.dir, "tf_analysis", "brush","results", "listoftT2.rds"))
-# Sherlock2_tT2 <- readRDS(file.path(output.dir, "tf_analysis", "brush_exsmoker","results", "listoftT2.rds"))
+Sherlock3_tT2 <- readRDS(file.path(output.dir, "tf_analysis", "brush","results", "listoftT2.rds"))
+# Sherlock3_tT2 <- readRDS(file.path(output.dir, "tf_analysis", "brush_exsmoker","results", "listoftT2.rds"))
 
 #LOAD Intersecting tT2 genes
-common1 <- intersect(row.names(Sherlock1_tT2[["mCOPDvsNon_COPD"]]), row.names(Sherlock2_tT2[["Mild.moderate.COPDvsControl"]]))
-common2 <- intersect(row.names(Sherlock1_tT2[["sCOPDvsNon_COPD"]]), row.names(Sherlock2_tT2[["Severe.COPDvsControl"]]))
-common3 <- intersect(row.names(Sherlock1_tT2[["sCOPDvsmCOPD"]]), row.names(Sherlock2_tT2[["Severe.COPDvsMild.moderate.COPD"]]))
+common1 <- intersect(row.names(Sherlock1_tT2[["Mild.moderate.COPDvsControl"]]), row.names(Sherlock3_tT2[["Mild.moderate.COPDvsControl"]]))
+common2 <- intersect(row.names(Sherlock1_tT2[["Severe.COPDvsControl"]]), row.names(Sherlock3_tT2[["Severe.COPDvsControl"]]))
+common3 <- intersect(row.names(Sherlock1_tT2[["Severe.COPDvsMild.moderate.COPD"]]), row.names(Sherlock3_tT2[["Severe.COPDvsMild.moderate.COPD"]]))
 
 listofboxplots <- list()
 boxplot_func <- function(study, comparison){
@@ -778,7 +779,7 @@ boxplot_func <- function(study, comparison){
   }
   
   if(study == "SHERLOCK2"){
-    TF_results <- sherlock2_TF_results
+    TF_results <- sherlock3_TF_results
     clinical <- sherlock2_brush_clinical
     # clinical <- clinical[which(clinical$Smoking.status == "Ex.smoker"),]
     x_order <- c("Control","Mild.moderate.COPD","Severe.COPD")
@@ -882,7 +883,7 @@ listofboxplots_study[[tf]] <- boxplotfinal
 for (j in c("SeverevsControl", "MildModvsControl", "SeverevsMildMod")){
   
 listofboxplots[[j]][["SHERLOCK1"]] <- boxplot_func(study = "SHERLOCK1", comparison = j)
-listofboxplots[[j]][["SHERLOCK2"]] <- boxplot_func(study = "SHERLOCK2", comparison = j)
+listofboxplots[[j]][["SHERLOCK3"]] <- boxplot_func(study = "SHERLOCK3", comparison = j)
 # }
 
 #Save all boxplots
@@ -897,9 +898,9 @@ pdf(file= file.path(this.boxplot.dir, paste0(j,"_tf_boxplots.pdf")), width = 9, 
 
 for (i in names(listofboxplots[[j]][["SHERLOCK1"]])){
   sherlock1_plot <- listofboxplots[[j]][["SHERLOCK1"]][[i]]
-  sherlock2_plot <- listofboxplots[[j]][["SHERLOCK2"]][[i]]
+  sherlock3_plot <- listofboxplots[[j]][["SHERLOCK3"]][[i]]
 
-  print(ggarrange(plotlist=list(sherlock1_plot, sherlock2_plot),
+  print(ggarrange(plotlist=list(sherlock1_plot, sherlock3_plot),
             nrow = 2, ncol =1))
 }
   dev.off()
