@@ -238,7 +238,7 @@ ui <- dashboardPage(
                          width = "650px",
                          height = "650px"),
               
-              p("Nominal P values from unpaired T-test shown. Counts were voom normalised (limma version 3.54.0)") 
+              p("Nominal P values from differential expression shown. Counts were voom normalised (limma version 3.54.0)") 
               
               
       )
@@ -354,7 +354,7 @@ server <- function(input, output, session){
     
     this_sysmex_variable <- input$sysmex_variable
     
-    withProgress(message = "Running edgeR differential expression...", value = 0.5, {
+    withProgress(message = "Loading edgeR differential expression results...", value = 0.5, {
       
       
       tT <- as.data.frame(study_data2()$tT[[this_sysmex_variable]])
@@ -444,8 +444,12 @@ server <- function(input, output, session){
     
     withProgress(message = "Loading required data ...", value = 0.2, {
       
+      listofresults <- readRDS(file.path(output.dir, "sysmex", "diffexp_withgroup", "results", "listofresults.RDS"))
+      
+      
       if(input$study3 == "SHERLOCK - Brush"){
         
+        listoftT <- listofresults[["brush"]][["tT"]]
         clinical <- clinical_brush
         counts <- counts_brush
         counts_voom <- voom(counts_brush)
@@ -462,11 +466,13 @@ server <- function(input, output, session){
         
         list(
           clinical2 = clinical,
-          counts2 = counts)
+          counts2 = counts,
+          listoftT = listoftT)
       }
       
       else if(input$study3 == "SHERLOCK - Biopsy"){
         
+        listoftT <- listofresults[["biopt"]][["tT"]]
         clinical <- clinical_biopt
         counts <- counts_biopt
         counts_voom <- voom(counts_biopt)
@@ -480,7 +486,8 @@ server <- function(input, output, session){
         
         list(
           clinical2 = clinical,
-          counts2 = counts)
+          counts2 = counts,
+          listoftT = listoftT)
       }
       
       
@@ -504,16 +511,16 @@ server <- function(input, output, session){
     req(input$gene3)
     req(input$sysmex_variable3)
     
-    withProgress(message = "Creating boxplot...", value = 0.5, {
-      
-      
+
+      listoftT = study_data3()$listoftT
       clinical2 = study_data3()$clinical2
       counts2 = study_data3()$counts2 #these are voom counts!
       this_sysmex_variable <- input$sysmex_variable3
       gene <- input$gene3
       
       
-      
+      withProgress(message = "Creating boxplot...", value = 0.5, {
+        
       print("test2")
       print(head(clinical2))
       
@@ -551,11 +558,13 @@ server <- function(input, output, session){
       scatterplot_theme <- theme(axis.title = element_text(size = 24),
                                  axis.text = element_text(size = 24),
                                  title = element_text(size = 20),
-                                 legend.text = element_text(size = 18),
+                                 legend.text = element_text(size = 16),
                                  legend.position = "bottom")
       
       
       
+      logFC_res <- listoftT[[this_sysmex_variable]][gene_symbol,"logFC"]
+      pval_res <- listoftT[[this_sysmex_variable]][gene_symbol,"PValue"]
       
       
       #geom_point, split by disease
@@ -566,6 +575,7 @@ server <- function(input, output, session){
         theme_bw()+
         scatterplot_theme +
         geom_point(aes(colour=classification)) +
+        geom_smooth(method = "lm", se = FALSE, linetype = "dashed", aes(colour = "black")) +
         
         
         theme(axis.text.x = element_text(size = 18))+
@@ -576,7 +586,21 @@ server <- function(input, output, session){
                                       "Mild-moderate COPD" = "#619CFF",
                                       "Severe COPD" = "#F8766D"))+
         ylab (label = gene) +
-        xlab (label = this_sysmex_variable) #+
+        xlab (label = this_sysmex_variable) +
+        
+        
+        
+        annotate(
+        "text",
+        x = -Inf,# adjust horizontally
+        y = -Inf,  # adjust vertically
+        hjust = -0,
+        vjust = -0.5,
+        label = paste0("logFC = ", signif(logFC_res, 3), "\n", 
+                       "p = ", signif(pval_res, 3)),
+        size = 5
+      )
+      
       # labs(caption = caption)
       
     }) #close withProgress
