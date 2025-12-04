@@ -317,6 +317,9 @@ for (i in c("brush", "biopt")){
                                               sample = clinical2$Study.ID))
       
       
+      logFC_res <- tT2[geneid,"logFC"]
+      pval_res <- tT2[geneid,"PValue"]
+      
       #geom_point, split by disease
       scatterplotfinal <- ggplot(scatterplot_data, aes(
         x = as.numeric(sysmex_variable),
@@ -337,7 +340,19 @@ for (i in c("brush", "biopt")){
                                       "Mild-moderate COPD" = "#619CFF",
                                       "Severe COPD" = "#F8766D"))+
         ylab (label = gene_hgnc) +
-        xlab (label = sysmex_variable) 
+        xlab (label = sysmex_variable) +
+        
+        
+        annotate(
+          "text",
+          x = Inf,# adjust horizontally
+          y = Inf,  # adjust vertically
+          hjust = 1.05,
+          vjust = 1.15,
+          label = paste0("logFC = ", signif(logFC_res, 3), "\n", 
+                         "p = ", signif(pval_res, 3)),
+          size = 5
+        )
       
     } #close plotting func
     
