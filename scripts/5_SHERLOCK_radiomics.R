@@ -57,40 +57,55 @@ counts <- readRDS(file.path(combat.processed.data.dir, "counts_combat.rds"))
 counts_brush <- readRDS(file.path(combat.processed.data.dir, "counts_brush_combat.rds"))
 counts_biopt <- readRDS(file.path(combat.processed.data.dir, "counts_biopt_combat.rds"))
 
-#includes sysmex data
+
 # Note that this file has less columns than previous version, survey columns have been removed
+# IMPORTANT - radiomics data in this file is updated too. the clinical_brushbiopt_master file has weird emphysema % values 
+
 raw_clinical <- read_xlsx(file.path(data.dir,"raw","Sherlock_database_07_25_Final.xlsx")) #319 SEO/patient IDs
 
 #master - all 600+ clinical variables
-clinical_brushbiopt_master <- readRDS(file.path(postQC.data.dir,  "master","clinical_brushbiopt_master.rds")) %>% 
+clinical_brushbiopt_master <- readRDS(file.path(postQC.data.dir,  "master","clinical_brushbiopt_master.rds")) 
+
+
+clinical_brushbiopt <- as.data.frame(raw_clinical[match(clinical_brushbiopt_master$Study.ID, raw_clinical$class_incl_study_id),])
+clinical_brushbiopt <- cbind(clinical_brushbiopt, sampletype = clinical_brushbiopt_master$sampletype, 
+                             batch = clinical_brushbiopt_master$batch,
+                             classification = clinical_brushbiopt_master$classification)
+row.names(clinical_brushbiopt) <- row.names(clinical_brushbiopt_master)
+
+clinical_brushbiopt <- clinical_brushbiopt %>% 
   dplyr::rename(
+    age = crf_age,
     sex = crf_gender,
     smoking_status = crf_smoking,
     packyears = crf_packyears,
     corticosteroid = crf_corticosteroid,
     FVC_post= postbodybox_fvc_post ,
+    FEV1 = postbodybox_fev1_post,
     FEV1_FVC_post = postbodybox_fev1_fvc_post
-  )
-clinical_brushbiopt_master[,c("age", "packyears", "FEV1", 
+  ) 
+
+
+clinical_brushbiopt[,c("age", "packyears", "FEV1", 
                               "FEV1_percent_pred", "FEV1_FVC_post", "FVC_post")] <- sapply(
-                                clinical_brushbiopt_master[,c("age", "packyears", "FEV1", 
+                                clinical_brushbiopt[,c("age", "packyears", "FEV1", 
                                                               "FEV1_percent_pred", "FEV1_FVC_post", "FVC_post")], 
                                 function(x) as.numeric(x))
 
+  
 
-#% and > symbols don't show up in colnames as they were invalid R names. replacing with colnames that have the symbols
-startcol <-which(colnames(clinical_brushbiopt_master) =="RL_insp_vol_ml")
-endcol <- which(colnames(clinical_brushbiopt_master) =="LLL_airtrapping_emphysema_.")
-newnames <- colnames(raw_clinical)[which(colnames(raw_clinical) == "RL_insp_vol_ml"):
-                                     which(colnames(raw_clinical) == "LLL_airtrapping_emphysema_%")]
-colnames(clinical_brushbiopt_master)[startcol:endcol] <- newnames
+
+startcol <-which(colnames(clinical_brushbiopt) =="RL_insp_vol_ml")
+endcol <- which(colnames(clinical_brushbiopt) =="LLL_airtrapping_emphysema_%")
+
 
 #Make the names valid for R
-colnames(clinical_brushbiopt_master)[startcol:endcol] <- gsub("%", "perc", colnames(clinical_brushbiopt_master)[startcol:endcol] )
-colnames(clinical_brushbiopt_master)[startcol:endcol] <- gsub(">", "over", colnames(clinical_brushbiopt_master)[startcol:endcol] )
-colnames(clinical_brushbiopt_master)[startcol:endcol] <- gsub("-", ".", colnames(clinical_brushbiopt_master)[startcol:endcol] )
-clinical_brushbiopt_master[,startcol:endcol] <- sapply(clinical_brushbiopt_master[,startcol:endcol], 
+colnames(clinical_brushbiopt)[startcol:endcol] <- gsub("%", "perc", colnames(clinical_brushbiopt)[startcol:endcol] )
+colnames(clinical_brushbiopt)[startcol:endcol] <- gsub(">", "over", colnames(clinical_brushbiopt)[startcol:endcol] )
+colnames(clinical_brushbiopt)[startcol:endcol] <- gsub("-", ".", colnames(clinical_brushbiopt)[startcol:endcol] )
+clinical_brushbiopt[,startcol:endcol] <- sapply(clinical_brushbiopt[,startcol:endcol], 
                                                        function(x) as.numeric(x))
+
 
 
 hgnc_symbols_db <- readRDS(file.path(postQC.data.dir,"hgnc_symbols_db.rds"))
@@ -99,8 +114,8 @@ hgnc_symbols_db <- readRDS(file.path(postQC.data.dir,"hgnc_symbols_db.rds"))
 setwd(file.path(main.dir))
 
 
-clinical_brush <-  clinical_brushbiopt_master[which(clinical_brushbiopt_master$sampletype == "Brush"),] #270
-clinical_biopt <-  clinical_brushbiopt_master[which(clinical_brushbiopt_master$sampletype == "Biopt"),] #271
+clinical_brush <-  clinical_brushbiopt[which(clinical_brushbiopt$sampletype == "Brush"),] #270
+clinical_biopt <-  clinical_brushbiopt[which(clinical_brushbiopt$sampletype == "Biopt"),] #271
 
 
 
@@ -267,7 +282,7 @@ clinical_biopt <-  clinical_brushbiopt_master[which(clinical_brushbiopt_master$s
 # ================================================================================== #
 cat("Starting 2. DIFFERENTIAL EXPRESSION", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
 
-diffexp.dir <- file.path(output.dir, "diffexp_withgroup")
+diffexp.dir <- file.path(output.dir, "diffexp")
 if(!exists(diffexp.dir)) dir.create(diffexp.dir, recursive = TRUE)
 
 # diffexp.hgnconly.dir <- file.path(output.dir, "diffexp_hgnc_only")
