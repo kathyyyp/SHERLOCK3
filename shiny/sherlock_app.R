@@ -1,5 +1,43 @@
 #Shiny app for Sherlock RNA-Seq Analysis Nov 2025
 
+
+# ================================================================================================================================== #
+# ================================ RUNNING SHINY APP WITHOUT HAVING DATA ON LOCAL FILEs =============================================
+# ==================================================================================================================================#
+
+## Note: Since I can't run any SHERLOCK data on my local R (privacy rules for accessing UMCG/Roche data), I have to run it in the HPC.
+## Shiny app browser doesn't load when run from HPC so I had to set up SSH tunnelling ie. a "tunnel" that connects my local computer (ie. Google Chrome, where I want the Shiny browser to come up) to a remote SSH server (the Nibbler HPC, where my code is)
+## To do so, I installed wsl (Windows system for Linux), loaded wsl in powershell and followed Nibbler's documentation for logging in to Nibbler through Linux
+
+## Run the below in HPC (works in both login node or interactive job) -----------------------------------------------------------------------------
+# ml RPlus
+# R
+# library(shiny)
+# runApp("shiny/sherlock_app.R", host = "0.0.0.0", port = 3838,launch.browser = FALSE)
+# 
+## Run the below in Windows powershell terminal --------------------------------------------------------------------------------------------------------------
+# wsl
+# cd ${HOME} #to redirect to the linux directory
+# 
+# 
+# 1) if logged in to login node (head node) on Nibbler
+# ssh  -i ~/.ssh/private_key_ssh \
+# -N -J umcg-kphung@tunnel.hpc.rug.nl \
+# -L 3838:localhost:3838 \
+# umcg-kphung@nibbler
+# 
+# #2)  logged into compute node (interactive job) on Nibbler - match the node ID!
+# ssh  -i ~/.ssh/private_key_ssh \
+# -N -J umcg-kphung@tunnel.hpc.rug.nl \
+# -L 3838:localhost:3838 \
+# umcg-kphung@nb-node-a02
+
+
+## In Chrome or whichever browser: load this link in a new tab-----------------------------------------------------------------------------------------------------------------------------------------
+# http://localhost:3838/
+# Shiny app should be in the browser window
+
+
 # ================================================================================================================================== #
 # ================================== ******** INSTRUCTIONS FOR USER :) ********* ===================================================
 # ==================================================================================================================================#

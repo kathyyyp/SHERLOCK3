@@ -1,27 +1,42 @@
 #Shiny app for Sherlock RNA-Seq - Sysmex - Analysis Nov 2025
+
+
+# ================================================================================================================================== #
+# ============================================== IGNORE IF RUNNING APP FROM UMCG =================================================== #
+# ============================= RUNNING SHINY APP AT UTS WITHOUT HAVING DATA ON LOCAL FILEs ======================================== #
+# ================================================================================================================================== #
+
+## Note: Since I can't run any SHERLOCK data on my local R, I have to run it in the HPC.
+## Shiny app browser doesn't load in HPC so I had to set up SSH tunnelling ie. a "tunnel" that connects my local computer (ie. Google Chrome, where I want the Shiny browser to come up) to a remote SSH server (the Nibbler HPC, where my code is)
+## To do so, I installed wsl (Windows system for Linux), loaded wsl in powershell and followed Nibbler's documentation for logging in to Nibbler through Linux
+
+## STEP 1) Run the below in HPC (works in both login node or interactive job) -----------------------------------------------------------------------------
 # ml RPlus
 # R
 # library(shiny)
 # runApp("shiny/sysmex_app.R", host = "0.0.0.0", port = 3838,launch.browser = FALSE)
 # 
+## STEP 2) Run the below in Windows powershell terminal --------------------------------------------------------------------------------------------------------------
 # wsl
 # cd ${HOME} #to redirect to the linux directory
 # 
 # 
-# #for login node (head node)
+# 1) if logged in to login node (head node) on Nibbler
 # ssh  -i ~/.ssh/private_key_ssh \
 # -N -J umcg-kphung@tunnel.hpc.rug.nl \
 # -L 3838:localhost:3838 \
 # umcg-kphung@nibbler
 # 
-# # for compute node (interactive job) - match the node ID
+# #2)  logged into compute node (interactive job) on Nibbler - match the node ID!
 # ssh  -i ~/.ssh/private_key_ssh \
 # -N -J umcg-kphung@tunnel.hpc.rug.nl \
 # -L 3838:localhost:3838 \
 # umcg-kphung@nb-node-a02
 
 
-# In Chrome: http://localhost:3838/
+## STEP 3) In Chrome or whichever browser: load this link in a new tab-----------------------------------------------------------------------------------------------------------------------------------------
+# http://localhost:3838/
+# Shiny app should be in the browser window
 
 # ================================================================================================================================== #
 # ================================== ******** INSTRUCTIONS FOR USER :) ********* ===================================================
@@ -30,11 +45,12 @@
 # STEP 1: Change the line below to your directory (path to where the 'shiny' folder is located on your computer)
 my_directory <- "/groups/umcg-griac/tmp02/projects/KathyPhung/SHERLOCK3"
 
+# STEP 2: Change the line below to your directory (path to where the 'library' folder is located on your computer)
+.libPaths("/path/to/my/r_library")
 
-# STEP 2: Click "Run App" in the top right of the source pane OR highlight all of the script after this line to the end of the page and press Ctrl + Enter to run
 
+# STEP 3: Click "Run App" in the top right of the source pane OR highlight all of the script after this line to the end of the page and press Ctrl + Enter to run
 setwd(my_directory)
-# .libPaths(file.path(my_directory,"sherlock_app_library")) 
 
 # ================================================================================== #
 # A. SCRIPT SET UP =================================================================
