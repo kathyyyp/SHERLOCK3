@@ -44,7 +44,6 @@ options(error = function() { traceback(); quit(status = 1) })
 # GT:DS:GP    
 # 0|0:0:1,0,0 
 
-library(vcfR)
 # Z rs28929474		
 # S rs17580		
 # I rs28931570		
@@ -100,12 +99,27 @@ if(!exists(output.dir))dir.create(output.dir)
 # ================================================================================== #
 setwd(file.path(main.dir))
 
+#master clinical file - output from 1a_SHERLOCK3_qc_combat.R, after removing outliers
+# this file still has unecessary columns we won't use (like survey questions etc. also emphysema values are weird)
+# these issues were fixed in Sherlock_database_07_25_Final.xlsx so match to that
+clinical_master <- read.csv("/groups/umcg-griac/tmp02/projects/SHERLOCK_2025/data/clinical_master.csv", row.names = 1)
 
-#master - all 600+ clinical variables
+
 raw_clinical <- read_xlsx(file.path(data.dir,"raw","Sherlock_database_07_25_Final.xlsx")) #319 SEO/patient IDs
+# Note that this file has less columns than previous version, survey columns have been removed
+# Also, this file has one row per patient, clinical_sk_all has one row per sample (same patients can have more than one sample bc brush and biopt)
+# IMPORTANT - radiomics data in this file is updated too. the clinical_brushbiopt_master file has weird emphysema % values 
 
-# INCLUDES SHERLOCK1
-clinical_sk_all <- raw_clinical %>% 
+
+clinical_sk_all <- as.data.frame(raw_clinical[match(clinical_master$Study.ID, raw_clinical$class_incl_study_id),])
+# clinical_sk_all <- clinical_sk_all[match(clinical_master$Study.ID, clinical_sk_all$Study.ID),]
+
+clinical_sk_all <- cbind(clinical_sk_all, sampletype = clinical_master$sampletype, 
+                             batch = clinical_master$batch,
+                             classification = clinical_master$classification)
+row.names(clinical_sk_all) <- row.names(clinical_master)
+
+clinical_sk_all <- clinical_sk_all %>% 
   dplyr::rename(
     Study.ID = class_incl_study_id,
     age = crf_age,
@@ -121,19 +135,17 @@ clinical_sk_all <- raw_clinical %>%
 
 clinical_sk_all[,c("age", "packyears", "FEV1", 
                        "FEV1_percent_pred", "FEV1_FVC_post", "FVC_post")] <- sapply(
-                         clinical_brushbiopt[,c("age", "packyears", "FEV1", 
+                         clinical_sk_all[,c("age", "packyears", "FEV1", 
                                                 "FEV1_percent_pred", "FEV1_FVC_post", "FVC_post")], 
                          function(x) as.numeric(x))
 
 
-
-
-# INCLUDES SHERLOCK2 and 3 only
-clinical_brushbiopt_master <- readRDS(file.path(postQC.data.dir,  "master","clinical_brushbiopt_master_named.rds"))
+saveRDS(clinical_sk_all, file.path(postQC.data.dir,  "master","clinical_sherlock123_master.rds")) 
 
 hgnc_symbols_db <- readRDS(file.path(postQC.data.dir,"hgnc_symbols_db.rds"))
 
-# Get SERPINA1 Z mutation genotypes
+# Get SERPINA1 Z mutation genotypes ------------------------------------------------------------------------------------------------------------
+# Pull out chromosome 14
 vcf_serpina1 <- read.vcfR(
   "data/processed/snp_array/chr14_serpina1_array.vcf.gz",
   verbose = FALSE
@@ -141,20 +153,20 @@ vcf_serpina1 <- read.vcfR(
 
 head(vcf_serpina1, n= 10)
 
-
 fix <- as.data.frame(getFIX(vcf_serpina1))
-
 serpina1_snps_df <- cbind(fix[, c("CHROM","POS","REF","ALT", "QUAL", "FILTER")], 
                           extract.gt(vcf_serpina1, element = "DS", as.numeric = TRUE)
                           # extract.gt(vcf_serpina1, element = "GT", as.numeric = FALSE)
-                          )
-#626 samples
-
+                          ) #626 samples
+ 
+# Current naming "RES0225_SEO568_GSAv3+". Convert to SEO and A number alone ("SEO568")
 colnames(serpina1_snps_df)[7:ncol(serpina1_snps_df)] <- str_extract(colnames(serpina1_snps_df)[7:ncol(serpina1_snps_df)], "(?<=_)[^_]+(?=_)")
 
+# Pull out Z mutation (ch14 pos94378610 for hg38)
 serpina1_snps_df[which(serpina1_snps_df$POS ==  94378610),] #Z mutation
 # chr14 94378610   ref=C   alt=T 
 
+#Remove the first 6 column (genotyping meta) so we are left with just dosage (ie. genotype as decimal)
 serpina1_z_snp <- as.data.frame(cbind(Study.ID = colnames(serpina1_snps_df)[-c(1:6)], 
                         z_mutation = as.numeric(serpina1_snps_df[which(serpina1_snps_df$POS ==  94378610), -c(1:6)])))
 write.csv(serpina1_z_snp, file.path(processed.data.dir, "snp_array","serpina1_z_snp_dosage.csv"), row.names = FALSE)
@@ -164,33 +176,43 @@ write.csv(serpina1_z_snp, file.path(processed.data.dir, "snp_array","serpina1_z_
 # MZ: 0.8 ≤ DS ≤ 1.2
 # ZZ: DS ≥ 1.8
 
+
 #Add mutation to clinical file
+serpina1_z_snp$Study.ID <- sub("^A", "A_", serpina1_z_snp$Study.ID)
 row.names(serpina1_z_snp) <- serpina1_z_snp$Study.ID
-clinical_brushbiopt_master$Study.ID %in% row.names(serpina1_z_snp)
-row.names(serpina1_z_snp) %in% clinical_brushbiopt_master$Study.ID
-row.names(serpina1_z_snp) %in% clinical_sk_all$Study.ID
-
-match(clinical_brushbiopt_master$Study.ID, row.names(serpina1_z_snp))
-intersect(clinical_brushbiopt_master$Study.ID, row.names(serpina1_z_snp))
-
-clinical_sk_all$Study.ID <- gsub( "A_", "A", clinical_sk_all$Study.ID )
-clinical_brushbiopt_master<- cbind(clinical_brushbiopt_master, 
-      serpina1_z_mutation = serpina1_z_snp[match(clinical_brushbiopt_master$Study.ID, row.names(serpina1_z_snp)),])
 
 
-clinical_brush <-  clinical_brushbiopt_master[which(clinical_brushbiopt_master$sampletype == "Brush"),] #270
-clinical_biopt <-  clinical_brushbiopt_master[which(clinical_brushbiopt_master$sampletype == "Biopt"),] #271
+matching_ids <- intersect(clinical_sk_all$Study.ID, row.names(serpina1_z_snp)) #328 patients (570 samples)
+
+clinical2 <- clinical_sk_all[clinical_sk_all$Study.ID %in% matching_ids,] #(570 samples from 328 patients)
+clinical2 <- cbind(clinical2, z_mutation = serpina1_z_snp[match(clinical2$Study.ID, serpina1_z_snp$Study.ID),
+                                                          "z_mutation"])
+
+#For all unique PATIENTS -------------------------------------------------------------------------------------------------------
+table(clinical2[!duplicated(clinical2$Study.ID),"classification"], clinical2[!duplicated(clinical2$Study.ID),"z_mutation"])
+
+#                      0   1   2
+# Control             94   4   0
+# Mild-moderate COPD 124   9   0
+# Severe COPD         86   6   5
 
 
-global_lung_vars <- c("RL_insp_LAA_.950HU_perc",
-                      "LL_insp_LAA_.950HU_perc",
-                      "RL_insp_emphysema_15percentile_HU",
-                      "LL_insp_emphysema_15percentile_HU",
-                      "Lungs_Pi10", 
-                      "Lungs_insp_bronchial_count", 
-                      "Lungs_mucus_plugs_count", 
-                      "Lungs_emphysema_perc", 
-                      "Lungs_airtrapping_perc")
+# For samples ------------------------------------------------------------------
+clinical_brush <-  clinical2[which(clinical2$sampletype == "Brush"),] #143
+table(clinical_brush$classification, clinical_brush$z_mutation)
+#                      0   1   2
+# Control             88   3   0
+# Mild-moderate COPD 116   9   0
+# Severe COPD         84   4   5
+
+
+
+clinical_biopt <-  clinical2[which(clinical2$sampletype == "Biopt"),] #185
+table(clinical_biopt$classification, clinical_biopt$z_mutation)
+#                     0  1  2
+# Control            69  2  0
+# Mild-moderate COPD 98  6  0
+# Severe COPD        75  6  5
 
 
 
