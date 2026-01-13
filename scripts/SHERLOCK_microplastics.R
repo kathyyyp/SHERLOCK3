@@ -20,8 +20,8 @@ options(error = function() { traceback(2); quit(status = 1) })
 # ================================================================================== #
 my_directory <- "/groups/umcg-griac/tmp02/projects/KathyPhung/SHERLOCK3"
 
-library("ggrepel")
-library("readxl")
+library(ggrepel)
+library(readxl)
 library(ggfortify)
 library(ggplot2)
 library(heatmap3)
@@ -32,6 +32,9 @@ library(limma)
 library(EnsDb.Hsapiens.v79)
 library(tidyverse)
 library(DESeq2)
+library(rstatix)
+library(ggpubr)
+
 # ================================================================================== #
 # B. SET UP DIRECTORY & OUTPUT PATHS ===============================================
 # ================================================================================== #
@@ -348,4 +351,230 @@ diffexp_deseq(microplastic = "total_mp")
 diffexp_deseq(microplastic = "nylon")
 diffexp_deseq(microplastic = "polyu")
 
+
+
+# ================================================================================== #
+# 2.2. BOXPLOTS ================================================================
+# ================================================================================== #
+
+
+
+
+boxplot_func <- function(microplastic){
+  
+  this.mp.dir <- file.path(mp.dir, microplastic)
+diffexp.dir <- file.path(this.mp.dir, "diffexp_deseq")
+diffexp.results.dir <- file.path(diffexp.dir, "results")
+diffexp.figures.dir <- file.path(diffexp.dir, "figures")
+
+listofresults <- readRDS(file.path(diffexp.results.dir, "listofresults.RDS"))
+
+if(microplastic == "total_mp"){
+  clinical <- clinical_total_mp}
+
+if(microplastic == "nylon"){
+  clinical <- clinical_nylon}
+
+
+if(microplastic == "polyu"){
+  clinical <- clinical_polyu}
+
+boxplotcounts <- counts_brush[,row.names(clinical)]
+counts_brush_voom <- voom(boxplotcounts)
+
+boxplotdata <- as.data.frame(t(counts_brush_voom$E))
+
+boxplot <- cbind(boxplotdata,
+                 quantity = clinical$quantity,
+                 exposure = clinical$exposure)
+
+tT2_genes<- row.names(listofresults[["tT2"]])
+
+top10 <- if (length(tT2_genes) >= 10) {
+  tT2_genes[1:10]
+} else {
+  tT2_genes
+}
+
+
+
+pdf(file = file.path(diffexp.figures.dir, paste0(microplastic,"_boxplot",".pdf")),
+    height = 8,
+    width= 6)
+cat("Starting plots", microplastic, format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+
+
+for (gene in c(top10)){
+  
+  gene_hgnc <- ifelse(is.na(hgnc_symbols_db[gene, "SYMBOL"]),
+                      gene,
+                hgnc_symbols_db[gene, "SYMBOL"])
+
+
+plot <- boxplot[,c(gene,
+                   "quantity",
+                   "exposure")]
+
+colnames(plot)[1] <- "gene"
+
+plot <- as.data.frame(plot)
+
+
+## Get P-Values --------------------------------------------------------------------------------------
+
+# THE TABLES IN STEP 1 AND 2 ARE TO GET X POSITIONS, THE T-TEST VALUES WILL NOT BE USED #
+#### STEP 1) THIS IS  A TABLE OF THE COMPARISONS I ACTUALLY WANT --------------------------------------------------------------------------------------
+stat.table <- plot %>%
+  t_test(gene ~ exposure)
+
+stat.table<- stat.table %>%
+  add_xy_position(x = "exposure", dodge = 0.8)
+
+# stat.table$contrast <- paste0(stat.table$group1, "-" ,stat.table$group2)
+
+
+
+#### STEP 2) MODIFY STAT TABLE TO INCLUDE COMPARISONS OF INTEREST --------------------------------------------------------------------------------------
+stat.table3 <- stat.table
+
+
+stat.table3[,"p"] <- listofresults[["tT"]][gene, "pvalue"]
+stat.table3$p <- signif(as.numeric(stat.table3$p), digits = 4)
+# stat.table3$y.position <- max(plot[,"gene"]) + 0.025*(max(plot[,"gene"]))
+
+logFC_res <- listofresults[["tT"]][gene, "log2FoldChange"]
+pval_res <- listofresults[["tT"]][gene, "pvalue"]
+
+cat("   Making boxplot", microplastic, gene_hgnc, format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+
+boxplotimage <- ggplot(plot, aes(
+  x = as.factor(exposure),
+  y = gene
+  # fill = smokingstatus
+)) +
+  theme_bw()+
+  
+  geom_boxplot(aes(color = exposure),position = position_dodge(1)) +
+  
+  geom_jitter(aes(color = exposure),
+              alpha = 0.5,
+              size = 2.5,
+              width = 0.3) +
+  
+  labs(title = paste(gene_hgnc, "expression:", microplastic, "exposure" )) +
+  ylab (label =  paste(gene_hgnc, "expression")) +
+  xlab (label = paste(microplastic, "exposure")) +
+  
+  
+  
+  stat_pvalue_manual(stat.table3,
+                     label = "p",
+                     tip.length = 0.01,
+                     size = 3) 
+
+
+
+scatterplotimage <- ggplot(plot, aes(
+  x = quantity,
+  y = gene,
+  color = exposure
+)) +
+  theme_bw()+
+  
+  
+  geom_point(aes(color = exposure)) +
+  
+  
+  labs(title = paste(gene_hgnc, "expression vs", microplastic, "quantity" )) +
+  ylab (label = paste(gene_hgnc, "expression")) +
+  xlab (label = paste("Quantity of", microplastic, "exposure")) +
+  
+  scale_x_continuous(labels = scales::label_number(accuracy = 0.01)) +
+  
+  annotate(
+    "text",
+    x = Inf,# adjust horizontally
+    y = -Inf,  # adjust vertically
+    hjust = 1.1,
+    vjust = -0.1,
+    label = paste0(
+      "High - Low exposure", "\n",
+      "logFC = ", signif(logFC_res, 3), "\n", 
+      "p = ", signif(pval_res, 3)),
+    size = 3
+  )
+
+image <- ggarrange(plotlist = list(boxplotimage,
+                            scatterplotimage),
+                   nrow = 2,
+                   ncol = 1)
+
+print(image)
+
+
+} #close loop of top10genes
+dev.off()
+
+} # close function
+
+
+boxplot_func(microplastic = "total_mp")
+boxplot_func(microplastic = "nylon")
+boxplot_func(microplastic = "polyu")
+
 cat("END OF THIS JOB", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+
+
+
+
+
+
+
+
+
+
+
+# ================================================================================== #
+# 2.2. HEATMAP PLOT ================================================================
+# ================================================================================== #
+x <- nameconvert[which(nameconvert$contrast == input$comparison2),1]
+
+tT <- listofresults[[x]]
+selection <-which((tT$logFC>1|tT$logFC< -1)& tT$BHAdjPValue<0.05)
+
+tT2=tT[selection,]
+
+expressionheatmap=as.matrix(voom(expression_symbols))
+colnames(expressionheatmap)=row.names(Sample)
+Sample_ordered=Sample[order(Sample$Time),]
+Sample_ordered=Sample_ordered[order(Sample_ordered$Temp),]
+Sample_ordered=Sample_ordered[order(Sample_ordered$Virus),]
+
+Temp=as.character(Sample_ordered$Temp)
+Temp[Temp==33]="pink"
+Temp[Temp==37]="red"
+
+Virus=as.character(Sample_ordered$Virus)
+Virus[Virus=="MOCK"]="yellow"
+Virus[Virus=="Omicron"]="black"
+Virus[Virus=="OC43"]="orange"
+Virus[Virus=="SARS2"]="blue"
+
+Time=as.character(Sample_ordered$Time)
+Time[Time==12]="lightgrey"
+Time[Time==24]="lightgreen"
+Time[Time==48]="green"
+Time[Time==72]="darkgreen"
+
+clabs=cbind(Temp,Virus,Time)
+
+arrayselectionheatmap = as.matrix(expressionheatmap[row.names(tT2),row.names(Sample_ordered)])
+heatmapplot <- heatmap3(arrayselectionheatmap, Colv=NA, labRow=row.names(arrayselectionheatmap), 
+                        balanceColor=T, labCol=NA, 
+                        showColDendro = F, showRowDendro = F,
+                        ColSideLabs = F, ColSideColors =clabs, cexRow=1.25, 
+                        legendfun=function() showLegend(legend=c("MOCK","Omicron","OC43", "SARS2", "12hrs", "24hrs", "48hrs", "72hrs", "33°C", "37°C"),
+                                                        col=c("yellow","black","orange", "blue","lightgrey", "lightgreen", "green", "darkgreen","pink", "red"),
+                                                        cex=1.5))
+
+print(heatmapplot)
