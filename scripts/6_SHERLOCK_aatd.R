@@ -200,6 +200,7 @@ table(clinical2[!duplicated(clinical2$Study.ID),"classification"], clinical2[!du
 # For samples ------------------------------------------------------------------
 clinical_brush <-  clinical2[which(clinical2$sampletype == "Brush"),] #143
 table(clinical_brush$classification, clinical_brush$z_mutation)
+
 #                      0   1   2
 # Control             88   3   0
 # Mild-moderate COPD 116   9   0
@@ -209,12 +210,44 @@ table(clinical_brush$classification, clinical_brush$z_mutation)
 
 clinical_biopt <-  clinical2[which(clinical2$sampletype == "Biopt"),] #185
 table(clinical_biopt$classification, clinical_biopt$z_mutation)
+
 #                     0  1  2
 # Control            69  2  0
 # Mild-moderate COPD 98  6  0
 # Severe COPD        75  6  5
 
+sherlock1_ids <- clinical_sk_all[which(clinical_sk_all$batch == 1), "Study.ID"]
+sherlock2_ids <- clinical_sk_all[which(clinical_sk_all$batch == 2), "Study.ID"]
+sherlock3_ids <- clinical_sk_all[which(clinical_sk_all$batch == 3), "Study.ID"]
 
+colnames(serpina1_snps_df)[-c(1:6)]
+
+# SHERLOCK1 patients that don't have genotyping data
+sherlock1_ids[!(sherlock1_ids %in% colnames(serpina1_snps_df)[-c(1:6)])]
+# [1] "A_1524" "A_1446" "A_1494" "A_1024" "A_1515" "A_952"  "A_753"  "A_662"
+# [9] "A_494"  "A_1189" "A_1073" "A_922"  "A_1580" "A_1537" "A_1615" "A_860"
+# [17] "A_1388" "A_1402" "A_1695" "A_1694" "A_1470" "A_1584" "A_1512" "A_143"
+# [25] "A_1681" "A_1209" "A_305"  "A_1735" "A_1576" "A_1790" "A_1057" "A_978"
+# [33] "A_1780" "A_1477" "A_1804" "A_1772" "A_1778" "A_1122" "A_1145" "A_108"
+# [41] "A_1655" "A_1002" "A_1879" "A_1119" "A_1769" "A_1896" "A_1520" "A_1657"
+# [49] "A_1405" "A_53"   "A_1496" "A_1941" "A_1727" "A_1919" "A_2022" "A_1472"
+# [57] "A_817"  "A_1848" "A_2028" "A_1688" "A_1911" "A_2215" "A_1542" "A_1985"
+# [65] "A_1407" "A_2026" "A_727"  "A_2301" "A_1827" NA       "A_884"  "A_2304"
+# [73] "A_2274" "A_1680" "A_2271" "A_2509" "A_2372" "A_1721" "A_2132" "A_2377"
+# [81] "A_2321" "A_2397" "A_2135" "A_1926" "A_2453" "A_1912" "A_2315" "A_2479"
+# [89] "A_2029" "A_719"  "A_2395" "A_1667" "A_1541" "A_582"  "A_1891" "A_2361"
+# [97] "A_2393" "A_1954" "A_506"  "A_2448" "A_1233" "A_757"  "A_2466" "A_2557"
+# [105] "A_2667" "A_2423" "A_2700" "A_2617" "A_2719" "A_2642" "A_2736" "A_3063"
+# [113] "A_2709" "A_2890" "A_2625" "A_960"  "A_1664" "A_660"  "A_1840"
+
+# SHERLOCK2 patients that don't have genotyping data
+sherlock2_ids[!(sherlock2_ids %in% colnames(serpina1_snps_df)[-c(1:6)])]
+# [1] "SEO066" "SEO066" "SEO069" "SEO070" "SEO075" "SEO077" "SEO078" "SEO087"
+# [9] "SEO087" "SEO185" "SEO196" "SEO196" "SEO507" "SEO507"
+
+# SHERLOCK3 patients that don't have genotyping data
+sherlock3_ids[!(sherlock3_ids %in% colnames(serpina1_snps_df)[-c(1:6)])]
+# [1] "SEO069" "SEO070" "SEO077" "SEO185" "SEO418" "SEO418"
 
 #from rachael's script
 # test=cbind(getCHROM(vcf),
