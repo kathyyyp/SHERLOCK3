@@ -276,6 +276,25 @@ sherlock3_ids[!(sherlock3_ids %in% row.names(serpina1_z_snp))]
 clinical123_master <- clinical_sk_all
 clinical123_master$serpina1_z_snp_GRCh38_ch14_pos94378610 <- serpina1_z_snp[match(clinical_sk_all$Study.ID, serpina1_z_snp$Study.ID), "z_mutation"]
 
+##### ---------------- START EXTRA WRANGLING ------------------------ ####
+#   This was done after writing SHERLOCK_sysmex_diffexp.R script but before SHERLOCK_sysmex_multivariate.R script
+### 15/01/2026 SYSMEX IS UNRELATED TO THIS SCRIPT, BUT EDITING SYSMEX VARIABLE COLUMN SO THAT clinical_sherlock123_master.rds IS THE MOST UPDATED FILE THAT CAN BE USED FOR EVERYTHING ! ###
+# Some rows for sysmex variable have "----" which turn it into a character. make these NA
+# Sysmex first column = "Mono", last column = "EO-Z", 53 total columns
+sysmex_index_start <- which(colnames(clinical123_master) == "Mono")
+sysmex_index_end <- which(colnames(clinical123_master) == "EO.Z")
+
+sapply(clinical123_master[sysmex_index_start:sysmex_index_end],class)
+
+clinical123_master[which(clinical123_master$RELYMP.103uL == "----"),"RELYMP.103uL"] <- NA
+clinical123_master$RELYMP.103uL <- as.numeric(clinical123_master$RELYMP.103uL)
+
+clinical123_master[which(clinical123_master$RELYMP == "----"),"RELYMP"] <- NA
+clinical123_master$RELYMP <- as.numeric(clinical123_master$RELYMP)
+
+sapply(clinical123_master[sysmex_index_start:sysmex_index_end],class)
+
+##### ---------------- END EXTRA WRANGLING ------------------------ ####
 saveRDS(clinical123_master, file.path(postQC.data.dir,  "master","clinical_sherlock123_master.rds"))
 
 
