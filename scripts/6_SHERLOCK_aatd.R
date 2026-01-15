@@ -99,6 +99,8 @@ if(!exists(output.dir))dir.create(output.dir)
 # ================================================================================== #
 setwd(file.path(main.dir))
 
+hgnc_symbols_db <- readRDS(file.path(postQC.data.dir,"hgnc_symbols_db.rds"))
+
 #master clinical file - output from 1a_SHERLOCK3_qc_combat.R, after removing outliers
 # this file still has unecessary columns we won't use (like survey questions etc. also emphysema values are weird)
 # these issues were fixed in Sherlock_database_07_25_Final.xlsx so match to that
@@ -140,9 +142,9 @@ clinical_sk_all[,c("age", "packyears", "FEV1",
                          function(x) as.numeric(x))
 
 
-saveRDS(clinical_sk_all, file.path(postQC.data.dir,  "master","clinical_sherlock123_master.rds")) 
+# saveRDS(clinical_sk_all, file.path(postQC.data.dir,  "master","clinical_sherlock123_master.rds")) 
+# saved again after adding z mutation data 
 
-hgnc_symbols_db <- readRDS(file.path(postQC.data.dir,"hgnc_symbols_db.rds"))
 
 # Get SERPINA1 Z mutation genotypes ------------------------------------------------------------------------------------------------------------
 # Pull out chromosome 14
@@ -154,100 +156,165 @@ vcf_serpina1 <- read.vcfR(
 head(vcf_serpina1, n= 10)
 
 fix <- as.data.frame(getFIX(vcf_serpina1))
-serpina1_snps_df <- cbind(fix[, c("CHROM","POS","REF","ALT", "QUAL", "FILTER")], 
+serpina1_snps_df <- cbind(fix[, c("CHROM","POS", "ID","REF","ALT", "QUAL", "FILTER")], 
                           extract.gt(vcf_serpina1, element = "DS", as.numeric = TRUE)
                           # extract.gt(vcf_serpina1, element = "GT", as.numeric = FALSE)
                           ) #626 samples
  
 # Current naming "RES0225_SEO568_GSAv3+". Convert to SEO and A number alone ("SEO568")
-colnames(serpina1_snps_df)[7:ncol(serpina1_snps_df)] <- str_extract(colnames(serpina1_snps_df)[7:ncol(serpina1_snps_df)], "(?<=_)[^_]+(?=_)")
+colnames(serpina1_snps_df)[8:ncol(serpina1_snps_df)] <- str_extract(colnames(serpina1_snps_df)[8:ncol(serpina1_snps_df)], "(?<=_)[^_]+(?=_)")
 
 # Pull out Z mutation (ch14 pos94378610 for hg38)
+# This should be rs28929474 (SERPINA1 Pi*Z mutation) but RS IDs aren't labelled
 serpina1_snps_df[which(serpina1_snps_df$POS ==  94378610),] #Z mutation
 # chr14 94378610   ref=C   alt=T 
 
-#Remove the first 6 column (genotyping meta) so we are left with just dosage (ie. genotype as decimal)
-serpina1_z_snp <- as.data.frame(cbind(Study.ID = colnames(serpina1_snps_df)[-c(1:6)], 
-                        z_mutation = as.numeric(serpina1_snps_df[which(serpina1_snps_df$POS ==  94378610), -c(1:6)])))
-write.csv(serpina1_z_snp, file.path(processed.data.dir, "snp_array","serpina1_z_snp_dosage.csv"), row.names = FALSE)
+#Remove the first 7 column (genotyping meta) so we are left with just dosage (ie. genotype as decimal)
+serpina1_z_snp <- as.data.frame(cbind(Study.ID = colnames(serpina1_snps_df)[-c(1:7)], 
+                        z_mutation = as.numeric(serpina1_snps_df[which(serpina1_snps_df$POS ==  94378610), -c(1:7)])))
+# write.csv(serpina1_z_snp, file.path(processed.data.dir, "snp_array","serpina1_z_snp_dosage.csv"), row.names = FALSE)
 
 # standard for definitions based on dosage DS, but the dosages for this snp are all whole numbers anyway
 # MM: DS < 0.2
 # MZ: 0.8 ≤ DS ≤ 1.2
 # ZZ: DS ≥ 1.8
 
+#Convert names in clinical file to new names provided by Daan (the A numbers in genotyping file are different to clinical file)
+A_number_conversion_file <- as.data.frame(read_excel(file.path(data.dir, "raw", "A_number_conversion_file.xlsx")))
+A_number_conversion_file$genotyping_ID <- paste0("A", A_number_conversion_file$'A-numbers Genotyping')
+A_number_conversion_file$clinical_ID <- paste0("A", A_number_conversion_file$'A-numbers Sherlock database')
+
+
 
 #Add mutation to clinical file
-serpina1_z_snp$Study.ID <- sub("^A", "A_", serpina1_z_snp$Study.ID)
+
+A_IDs <- serpina1_z_snp[grep("^A", serpina1_z_snp$Study.ID),]
+not_A_IDs <- serpina1_z_snp[!serpina1_z_snp$Study.ID %in% A_IDs$Study.ID,]
+
+
+A_IDs$Study.ID %in% A_number_conversion_file$genotyping_ID
+A_IDs$Study.ID.corrected <- A_number_conversion_file[match(A_IDs$Study.ID, A_number_conversion_file$genotyping_ID), "clinical_ID"]
+
+
+A_IDs$Study.ID.corrected <- sub("^A", "A_", A_IDs$Study.ID.corrected )
+
+
+serpina1_z_snp <- rbind(cbind(Study.ID = A_IDs$Study.ID.corrected, 
+                                   z_mutation = A_IDs$z_mutation),
+                             not_A_IDs)
+
 row.names(serpina1_z_snp) <- serpina1_z_snp$Study.ID
 
 
-matching_ids <- intersect(clinical_sk_all$Study.ID, row.names(serpina1_z_snp)) #328 patients (570 samples)
+matching_ids <- intersect(clinical_sk_all$Study.ID, row.names(serpina1_z_snp)) #432 patients 
 
-clinical2 <- clinical_sk_all[clinical_sk_all$Study.ID %in% matching_ids,] #(570 samples from 328 patients)
-clinical2 <- cbind(clinical2, z_mutation = serpina1_z_snp[match(clinical2$Study.ID, serpina1_z_snp$Study.ID),
+clinical2 <- clinical_sk_all[clinical_sk_all$Study.ID %in% matching_ids,] #(674 samples from 432 patients)
+clinical2 <- cbind(clinical2, serpina1_z_snp_GRCh38_ch14_pos94378610 = serpina1_z_snp[match(clinical2$Study.ID, serpina1_z_snp$Study.ID),
                                                           "z_mutation"])
 
+
+
+# standard for definitions based on dosage DS, but the dosages for this snp are all whole numbers anyway
+# MM: DS < 0.2
+# MZ: 0.8 ≤ DS ≤ 1.2
+# ZZ: DS ≥ 1.8
+
 #For all unique PATIENTS -------------------------------------------------------------------------------------------------------
-table(clinical2[!duplicated(clinical2$Study.ID),"classification"], clinical2[!duplicated(clinical2$Study.ID),"z_mutation"])
+table(clinical2[!duplicated(clinical2$Study.ID),"classification"], clinical2[!duplicated(clinical2$Study.ID),"serpina1_z_snp_GRCh38_ch14_pos94378610"])
+
 
 #                      0   1   2
 # Control             94   4   0
 # Mild-moderate COPD 124   9   0
-# Severe COPD         86   6   5
+# Severe COPD        173  19   9
+
 
 
 # For samples ------------------------------------------------------------------
-clinical_brush <-  clinical2[which(clinical2$sampletype == "Brush"),] #143
-table(clinical_brush$classification, clinical_brush$z_mutation)
+clinical_brush <-  clinical2[which(clinical2$sampletype == "Brush"),] #143 (sherlock1, 2 and 3)
+table(clinical_brush$classification, clinical_brush$serpina1_z_snp_GRCh38_ch14_pos94378610)
+
 
 #                      0   1   2
 # Control             88   3   0
 # Mild-moderate COPD 116   9   0
-# Severe COPD         84   4   5
+# Severe COPD        171  17   9
 
 
 
-clinical_biopt <-  clinical2[which(clinical2$sampletype == "Biopt"),] #185
-table(clinical_biopt$classification, clinical_biopt$z_mutation)
+
+clinical_biopt <-  clinical2[which(clinical2$sampletype == "Biopt"),] #185 (sherlock 2 and 3)
+table(clinical_biopt$classification, clinical_biopt$serpina1_z_snp_GRCh38_ch14_pos94378610)
+
 
 #                     0  1  2
 # Control            69  2  0
 # Mild-moderate COPD 98  6  0
 # Severe COPD        75  6  5
 
+
 sherlock1_ids <- clinical_sk_all[which(clinical_sk_all$batch == 1), "Study.ID"]
 sherlock2_ids <- clinical_sk_all[which(clinical_sk_all$batch == 2), "Study.ID"]
 sherlock3_ids <- clinical_sk_all[which(clinical_sk_all$batch == 3), "Study.ID"]
 
-colnames(serpina1_snps_df)[-c(1:6)]
 
 # SHERLOCK1 patients that don't have genotyping data
-sherlock1_ids[!(sherlock1_ids %in% colnames(serpina1_snps_df)[-c(1:6)])]
-# [1] "A_1524" "A_1446" "A_1494" "A_1024" "A_1515" "A_952"  "A_753"  "A_662"
-# [9] "A_494"  "A_1189" "A_1073" "A_922"  "A_1580" "A_1537" "A_1615" "A_860"
-# [17] "A_1388" "A_1402" "A_1695" "A_1694" "A_1470" "A_1584" "A_1512" "A_143"
-# [25] "A_1681" "A_1209" "A_305"  "A_1735" "A_1576" "A_1790" "A_1057" "A_978"
-# [33] "A_1780" "A_1477" "A_1804" "A_1772" "A_1778" "A_1122" "A_1145" "A_108"
-# [41] "A_1655" "A_1002" "A_1879" "A_1119" "A_1769" "A_1896" "A_1520" "A_1657"
-# [49] "A_1405" "A_53"   "A_1496" "A_1941" "A_1727" "A_1919" "A_2022" "A_1472"
-# [57] "A_817"  "A_1848" "A_2028" "A_1688" "A_1911" "A_2215" "A_1542" "A_1985"
-# [65] "A_1407" "A_2026" "A_727"  "A_2301" "A_1827" NA       "A_884"  "A_2304"
-# [73] "A_2274" "A_1680" "A_2271" "A_2509" "A_2372" "A_1721" "A_2132" "A_2377"
-# [81] "A_2321" "A_2397" "A_2135" "A_1926" "A_2453" "A_1912" "A_2315" "A_2479"
-# [89] "A_2029" "A_719"  "A_2395" "A_1667" "A_1541" "A_582"  "A_1891" "A_2361"
-# [97] "A_2393" "A_1954" "A_506"  "A_2448" "A_1233" "A_757"  "A_2466" "A_2557"
-# [105] "A_2667" "A_2423" "A_2700" "A_2617" "A_2719" "A_2642" "A_2736" "A_3063"
-# [113] "A_2709" "A_2890" "A_2625" "A_960"  "A_1664" "A_660"  "A_1840"
+sherlock1_ids[!(sherlock1_ids %in% row.names(serpina1_z_snp))]
+# [1] "A_1494" "A_922"  "A_978"  "A_1655" "A_1472" "A_1542" NA       "A_1680"
+# [9] "A_1541" "A_2700" "A_2642" "A_3063" "A_2890" "A_960"
+
 
 # SHERLOCK2 patients that don't have genotyping data
-sherlock2_ids[!(sherlock2_ids %in% colnames(serpina1_snps_df)[-c(1:6)])]
+sherlock2_ids[!(sherlock2_ids %in% row.names(serpina1_z_snp))]
 # [1] "SEO066" "SEO066" "SEO069" "SEO070" "SEO075" "SEO077" "SEO078" "SEO087"
 # [9] "SEO087" "SEO185" "SEO196" "SEO196" "SEO507" "SEO507"
 
 # SHERLOCK3 patients that don't have genotyping data
-sherlock3_ids[!(sherlock3_ids %in% colnames(serpina1_snps_df)[-c(1:6)])]
+sherlock3_ids[!(sherlock3_ids %in% row.names(serpina1_z_snp))]
 # [1] "SEO069" "SEO070" "SEO077" "SEO185" "SEO418" "SEO418"
+
+clinical123_master <- clinical_sk_all
+clinical123_master$serpina1_z_snp_GRCh38_ch14_pos94378610 <- serpina1_z_snp[match(clinical_sk_all$Study.ID, serpina1_z_snp$Study.ID), "z_mutation"]
+
+saveRDS(clinical123_master, file.path(postQC.data.dir,  "master","clinical_sherlock123_master.rds"))
+
+
+# ================================================================================== #
+# 2. DIFFERENTIAL EXPRESSION =======================================================
+# ================================================================================== #
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 #from rachael's script
 # test=cbind(getCHROM(vcf),
