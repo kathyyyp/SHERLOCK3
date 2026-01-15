@@ -296,6 +296,7 @@ sapply(clinical123_master[sysmex_index_start:sysmex_index_end],class)
 
 ##### ---------------- END EXTRA WRANGLING ------------------------ ####
 saveRDS(clinical123_master, file.path(postQC.data.dir,  "master","clinical_sherlock123_master.rds"))
+write.csv(clinical123_master, file.path(postQC.data.dir,  "master","clinical_sherlock123_master.csv"))
 
 
 # ================================================================================== #
