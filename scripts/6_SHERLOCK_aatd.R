@@ -107,7 +107,7 @@ hgnc_symbols_db <- readRDS(file.path(postQC.data.dir,"hgnc_symbols_db.rds"))
 clinical_master <- read.csv("/groups/umcg-griac/tmp02/projects/SHERLOCK_2025/data/clinical_master.csv", row.names = 1)
 
 
-raw_clinical <- read_xlsx(file.path(data.dir,"raw","Sherlock_database_07_25_Final.xlsx")) #319 SEO/patient IDs
+raw_clinical <- read_xlsx(file.path(data.dir,"raw","Sherlock_database_07_25_Final.xlsx")) #598 SEO/patient IDs
 # Note that this file has less columns than previous version, survey columns have been removed
 # Also, this file has one row per patient, clinical_sk_all has one row per sample (same patients can have more than one sample bc brush and biopt)
 # IMPORTANT - radiomics data in this file is updated too. the clinical_brushbiopt_master file has weird emphysema % values 
@@ -203,10 +203,10 @@ serpina1_z_snp <- rbind(cbind(Study.ID = A_IDs$Study.ID.corrected,
                                    z_mutation = A_IDs$z_mutation),
                              not_A_IDs)
 
-row.names(serpina1_z_snp) <- serpina1_z_snp$Study.ID
+row.names(serpina1_z_snp) <- serpina1_z_snp$Study.ID #There are 626 patients with genotyping data
+length(unique(serpina1_z_snp$Study.ID))
 
-
-matching_ids <- intersect(clinical_sk_all$Study.ID, row.names(serpina1_z_snp)) #432 patients 
+matching_ids <- intersect(clinical_sk_all$Study.ID, row.names(serpina1_z_snp)) #432 patients that have genotyping data AND gene expresion data. 194 have genotyping but not gene expression
 
 clinical2 <- clinical_sk_all[clinical_sk_all$Study.ID %in% matching_ids,] #(674 samples from 432 patients)
 clinical2 <- cbind(clinical2, serpina1_z_snp_GRCh38_ch14_pos94378610 = serpina1_z_snp[match(clinical2$Study.ID, serpina1_z_snp$Study.ID),
@@ -252,29 +252,78 @@ table(clinical_biopt$classification, clinical_biopt$serpina1_z_snp_GRCh38_ch14_p
 # Mild-moderate COPD 98  6  0
 # Severe COPD        75  6  5
 
-
-sherlock1_ids <- clinical_sk_all[which(clinical_sk_all$batch == 1), "Study.ID"]
-sherlock2_ids <- clinical_sk_all[which(clinical_sk_all$batch == 2), "Study.ID"]
-sherlock3_ids <- clinical_sk_all[which(clinical_sk_all$batch == 3), "Study.ID"]
-
-
-# SHERLOCK1 patients that don't have genotyping data
-sherlock1_ids[!(sherlock1_ids %in% row.names(serpina1_z_snp))]
-# [1] "A_1494" "A_922"  "A_978"  "A_1655" "A_1472" "A_1542" NA       "A_1680"
-# [9] "A_1541" "A_2700" "A_2642" "A_3063" "A_2890" "A_960"
-
-
-# SHERLOCK2 patients that don't have genotyping data
-sherlock2_ids[!(sherlock2_ids %in% row.names(serpina1_z_snp))]
-# [1] "SEO066" "SEO066" "SEO069" "SEO070" "SEO075" "SEO077" "SEO078" "SEO087"
-# [9] "SEO087" "SEO185" "SEO196" "SEO196" "SEO507" "SEO507"
-
-# SHERLOCK3 patients that don't have genotyping data
-sherlock3_ids[!(sherlock3_ids %in% row.names(serpina1_z_snp))]
-# [1] "SEO069" "SEO070" "SEO077" "SEO185" "SEO418" "SEO418"
-
+# Add to master table!
 clinical123_master <- clinical_sk_all
 clinical123_master$serpina1_z_snp_GRCh38_ch14_pos94378610 <- serpina1_z_snp[match(clinical_sk_all$Study.ID, serpina1_z_snp$Study.ID), "z_mutation"]
+
+## There's one sherlock1 patient (A_753) that was in the old clinical file (mastertable_sherlock3) that is not in the current final database
+clinical123_master <- clinical123_master[-which(is.na(clinical123_master$Study.ID)),]
+
+
+sherlock1_ids <- unique(clinical123_master[which(clinical123_master$batch == 1), "Study.ID"])
+sherlock2_ids <- unique(clinical123_master[which(clinical123_master$batch == 2), "Study.ID"])
+sherlock3_ids <- unique(clinical123_master[which(clinical123_master$batch == 3), "Study.ID"])
+
+
+### 626 Patients have genotyping data
+### 598 patients have clinical data in master file
+### 541 patients have expression data
+### 24 PATIENTS THAT HAVE EXPRESSION DATA AND CLINICAL DATA BUT NO GENOTYPING data ### -------------------------------------------------
+patient_overlaps <- data.frame()
+setdiff(unique(clinical123_master$Study.ID), row.names(serpina1_z_snp))
+cat(setdiff(unique(clinical123_master$Study.ID), row.names(serpina1_z_snp)), sep = "\n")
+
+# [1] "A_1494" "A_922"  "A_978"  "A_1655" "A_1472" "A_1542" "A_1680" "A_1541"
+# [9] "A_2700" "A_2642" "A_3063" "A_2890" "A_960"  "SEO066" "SEO069" "SEO070"
+# [17] "SEO075" "SEO077" "SEO078" "SEO087" "SEO185" "SEO196" "SEO507" "SEO418"
+
+# Breakdown------------------------------------------
+# SHERLOCK1
+sherlock1_ids[!(sherlock1_ids %in% row.names(serpina1_z_snp))]
+# [1] "A_1494" "A_922"  "A_978"  "A_1655" "A_1472" "A_1542" "A_1680" "A_1541"
+# [9] "A_2700" "A_2642" "A_3063" "A_2890" "A_960"
+
+
+# SHERLOCK2 
+sherlock2_ids[!(sherlock2_ids %in% row.names(serpina1_z_snp))]
+# [1] "SEO066" "SEO069" "SEO070" "SEO075" "SEO077" "SEO078" "SEO087" "SEO185"
+# [9] "SEO196" "SEO507"
+
+
+# SHERLOCK3 
+sherlock3_ids[!(sherlock3_ids %in% row.names(serpina1_z_snp))]
+# [1] "SEO069" "SEO070" "SEO077" "SEO185" "SEO418"
+
+# -------------------------------------------------
+
+### 194 PATIENTS THAT HAVE GENOTYPING DATA BUT NO EXPRESSION data ### -------------------------------------------------
+setdiff(row.names(serpina1_z_snp), clinical123_master$Study.ID)
+cat(setdiff(row.names(serpina1_z_snp), clinical123_master$Study.ID), sep = "\n")
+
+
+### 179 PATIENTS THAT HAVE GENOTYPING DATA BUT NOT CLINICAL DATA  ### -------------------------------------------------
+setdiff(row.names(serpina1_z_snp), sub("^A", "A_", raw_clinical$class_incl_study_id))
+cat(setdiff(row.names(serpina1_z_snp), sub("^A", "A_", raw_clinical$class_incl_study_id)), sep = "\n")
+
+
+### 74 PATIENTS THAT HAVE GENOTYPING DATA AND CLINICAL DATA BUT NO EXPRESSION DATA ### -------------------------------------------------
+setdiff(setdiff(row.names(serpina1_z_snp), sub("^A", "A_", raw_clinical$class_incl_study_id)), matching_ids)
+cat(setdiff(setdiff(row.names(serpina1_z_snp), sub("^A", "A_", raw_clinical$class_incl_study_id)), matching_ids), sep = "\n")
+
+
+# ##-- Post batch correction
+counts <- readRDS(file.path(combat.processed.data.dir, "counts_combat.rds"))
+counts_brush <- readRDS(file.path(combat.processed.data.dir, "counts_brush_combat.rds"))
+counts_biopt <- readRDS(file.path(combat.processed.data.dir, "counts_biopt_combat.rds"))
+sherlock1_counts<- readRDS(file.path(processed.data.dir, "SHERLOCK1", "counts_sk1.rds"))
+
+unique(clinical123_master[intersect(colnames(counts_brush), row.names(clinical123_master)), "Study.ID"]) #270 patients have brushes (sherlock 2,3)
+unique(clinical123_master[intersect(colnames(counts_biopt), row.names(clinical123_master)), "Study.ID"]) #271 patients have biopsies (sherlock 2,3)
+unique(clinical123_master[intersect(colnames(sherlock1_counts), row.names(clinical123_master)), "Study.ID"]) #166 patients have brushes (sherlock 1)
+
+### -----------------------------------------------------------------------------------
+
+
 
 ##### ---------------- START EXTRA WRANGLING ------------------------ ####
 #   This was done after writing SHERLOCK_sysmex_diffexp.R script but before SHERLOCK_sysmex_multivariate.R script
