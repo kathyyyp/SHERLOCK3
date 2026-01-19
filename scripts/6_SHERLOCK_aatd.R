@@ -142,8 +142,14 @@ clinical_sk_all[,c("age", "packyears", "FEV1",
                          function(x) as.numeric(x))
 
 
-# saveRDS(clinical_sk_all, file.path(postQC.data.dir,  "master","clinical_sherlock123_master.rds")) 
-# saved again after adding z mutation data 
+# LIB5426634_SAM24375606 
+#this patient had no data in raw_clinical but is in clinical_sk1_master.rds(generated from mastertable_sherlock3.csv ie. the SHERLOCK1 data alen gave me in 2024 
+#(mastertable_sherlock3.csv does not mean sherlock3 study, just the name of alen's sherlock1 file version 3))
+clinical_sk1_master <- readRDS(file.path(processed.data.dir, "SHERLOCK1", "clinical_sk1_master.rds"))
+clinical_sk1_master["LIB5426634_SAM24375606",]
+
+common_cols <- intersect(colnames(clinical_sk1_master), colnames(clinical_sk_all))
+clinical_sk_all["LIB5426634_SAM24375606", common_cols] <- clinical_sk_all["LIB5426634_SAM24375606", common_cols]
 
 
 # Get SERPINA1 Z mutation genotypes ------------------------------------------------------------------------------------------------------------
@@ -242,7 +248,6 @@ table(clinical_brush$classification, clinical_brush$serpina1_z_snp_GRCh38_ch14_p
 
 
 
-
 clinical_biopt <-  clinical2[which(clinical2$sampletype == "Biopt"),] #185 (sherlock 2 and 3)
 table(clinical_biopt$classification, clinical_biopt$serpina1_z_snp_GRCh38_ch14_pos94378610)
 
@@ -252,12 +257,70 @@ table(clinical_biopt$classification, clinical_biopt$serpina1_z_snp_GRCh38_ch14_p
 # Mild-moderate COPD 98  6  0
 # Severe COPD        75  6  5
 
-# Add to master table!
+
+
+# Make master table!
 clinical123_master <- clinical_sk_all
 clinical123_master$serpina1_z_snp_GRCh38_ch14_pos94378610 <- serpina1_z_snp[match(clinical_sk_all$Study.ID, serpina1_z_snp$Study.ID), "z_mutation"]
 
-## There's one sherlock1 patient (A_753) that was in the old clinical file (mastertable_sherlock3) that is not in the current final database
-clinical123_master <- clinical123_master[-which(is.na(clinical123_master$Study.ID)),]
+
+
+##### ------------------------------------------ START EXTRA WRANGLING ------------------------------------------- ####
+# 15/01/26: Came back to add this section after running 5_SHERLOCK_radiomics and SHERLOCK_sysmex_diffexp.R scripts,  before starting SHERLOCK_sysmex_multivariate.R script
+# The below wrangling is unrelated to this script. editing radiomics and sysmex variables columns so that clinical_sherlock123_master.rds IS THE MOST UPDATED FILE THAT CAN BE USED FOR EVERYTHING ! ###
+
+
+## FOR RADIOMICS COLUMNS
+#Make the names valid for R
+radiomics_index_start <-which(colnames(clinical123_master) =="RL_insp_vol_ml")
+radiomics_index_end <- which(colnames(clinical123_master) =="LLL_airtrapping_emphysema_%")
+
+colnames(clinical123_master)[radiomics_index_start:radiomics_index_end] <- gsub("%", "perc", colnames(clinical123_master)[radiomics_index_start:radiomics_index_end] )
+colnames(clinical123_master)[radiomics_index_start:radiomics_index_end] <- gsub(">", "over", colnames(clinical123_master)[radiomics_index_start:radiomics_index_end] )
+colnames(clinical123_master)[radiomics_index_start:radiomics_index_end] <- gsub("-", ".", colnames(clinical123_master)[radiomics_index_start:radiomics_index_end] )
+clinical123_master[, radiomics_index_start:radiomics_index_end] <- lapply(
+  clinical123_master[, radiomics_index_start:radiomics_index_end],
+  function(x) {
+    if (is.list(x)) {
+      as.numeric(unlist(x))
+    } else {
+      as.numeric(x)
+    }
+  }
+)
+sapply(clinical123_master[radiomics_index_start:radiomics_index_end],class)
+
+
+# FOR SYSMEX COLUMNS
+# Some rows for sysmex variable have "----" which turn it into a character. make these NA
+# Sysmex first column = "Mono", last column = "EO-Z", 53 total columns
+sysmex_index_start <- which(colnames(clinical123_master) == "Mono")
+sysmex_index_end <- which(colnames(clinical123_master) == "EO-Z")
+
+colnames(clinical123_master)[sysmex_index_start:sysmex_index_end] <- make.names(colnames(clinical123_master)[sysmex_index_start:sysmex_index_end])
+
+sapply(clinical123_master[sysmex_index_start:sysmex_index_end],class)
+
+clinical123_master[which(clinical123_master$RELYMP.103uL == "----"),"RELYMP.103uL"] <- NA
+clinical123_master$RELYMP.103uL <- as.numeric(clinical123_master$RELYMP.103uL)
+
+clinical123_master[which(clinical123_master$RELYMP == "----"),"RELYMP"] <- NA
+clinical123_master$RELYMP <- as.numeric(clinical123_master$RELYMP)
+
+sapply(clinical123_master[sysmex_index_start:sysmex_index_end],class)
+
+##### ------------------------------------------ END EXTRA WRANGLING --------------------------------------------- ####
+
+saveRDS(clinical123_master, file.path(postQC.data.dir,  "master","clinical_sherlock123_master.rds"))
+write.csv(clinical123_master, file.path(postQC.data.dir,  "master","clinical_sherlock123_master.csv"))
+
+
+
+
+
+
+
+# ---------------------------------------------------- SUMMARISING NUMBERS ------------------------------------------------------------- #
 
 
 sherlock1_ids <- unique(clinical123_master[which(clinical123_master$batch == 1), "Study.ID"])
@@ -269,7 +332,6 @@ sherlock3_ids <- unique(clinical123_master[which(clinical123_master$batch == 3),
 ### 598 patients have clinical data in master file
 ### 541 patients have expression data
 ### 24 PATIENTS THAT HAVE EXPRESSION DATA AND CLINICAL DATA BUT NO GENOTYPING data ### -------------------------------------------------
-patient_overlaps <- data.frame()
 setdiff(unique(clinical123_master$Study.ID), row.names(serpina1_z_snp))
 cat(setdiff(unique(clinical123_master$Study.ID), row.names(serpina1_z_snp)), sep = "\n")
 
@@ -294,7 +356,8 @@ sherlock2_ids[!(sherlock2_ids %in% row.names(serpina1_z_snp))]
 sherlock3_ids[!(sherlock3_ids %in% row.names(serpina1_z_snp))]
 # [1] "SEO069" "SEO070" "SEO077" "SEO185" "SEO418"
 
-# -------------------------------------------------
+### 432 PATIENTS THAT HAVE GENOTYPING DATA BUT NO EXPRESSION data ### -------------------------------------------------
+cat(intersect(clinical_sk_all$Study.ID, row.names(serpina1_z_snp)), sep = "\n")
 
 ### 194 PATIENTS THAT HAVE GENOTYPING DATA BUT NO EXPRESSION data ### -------------------------------------------------
 setdiff(row.names(serpina1_z_snp), clinical123_master$Study.ID)
@@ -319,46 +382,135 @@ sherlock1_counts<- readRDS(file.path(processed.data.dir, "SHERLOCK1", "counts_sk
 
 unique(clinical123_master[intersect(colnames(counts_brush), row.names(clinical123_master)), "Study.ID"]) #270 patients have brushes (sherlock 2,3)
 unique(clinical123_master[intersect(colnames(counts_biopt), row.names(clinical123_master)), "Study.ID"]) #271 patients have biopsies (sherlock 2,3)
-unique(clinical123_master[intersect(colnames(sherlock1_counts), row.names(clinical123_master)), "Study.ID"]) #166 patients have brushes (sherlock 1)
-
-### -----------------------------------------------------------------------------------
+unique(clinical123_master[intersect(colnames(sherlock1_counts), row.names(clinical123_master)), "Study.ID"]) #167 patients have brushes (sherlock 1)
 
 
-
-##### ---------------- START EXTRA WRANGLING ------------------------ ####
-#   This was done after writing SHERLOCK_sysmex_diffexp.R script but before SHERLOCK_sysmex_multivariate.R script
-### 15/01/2026 SYSMEX IS UNRELATED TO THIS SCRIPT, BUT EDITING SYSMEX VARIABLE COLUMN SO THAT clinical_sherlock123_master.rds IS THE MOST UPDATED FILE THAT CAN BE USED FOR EVERYTHING ! ###
-# Some rows for sysmex variable have "----" which turn it into a character. make these NA
-# Sysmex first column = "Mono", last column = "EO-Z", 53 total columns
-sysmex_index_start <- which(colnames(clinical123_master) == "Mono")
-sysmex_index_end <- which(colnames(clinical123_master) == "EO.Z")
-
-sapply(clinical123_master[sysmex_index_start:sysmex_index_end],class)
-
-clinical123_master[which(clinical123_master$RELYMP.103uL == "----"),"RELYMP.103uL"] <- NA
-clinical123_master$RELYMP.103uL <- as.numeric(clinical123_master$RELYMP.103uL)
-
-clinical123_master[which(clinical123_master$RELYMP == "----"),"RELYMP"] <- NA
-clinical123_master$RELYMP <- as.numeric(clinical123_master$RELYMP)
-
-sapply(clinical123_master[sysmex_index_start:sysmex_index_end],class)
-
-##### ---------------- END EXTRA WRANGLING ------------------------ ####
-saveRDS(clinical123_master, file.path(postQC.data.dir,  "master","clinical_sherlock123_master.rds"))
-write.csv(clinical123_master, file.path(postQC.data.dir,  "master","clinical_sherlock123_master.csv"))
+intersect(row.names(serpina1_z_snp), raw_clinical$class_incl_study_id)
+### --------------------------------------------------------------------------------------------------------------------------------------
 
 
 # ================================================================================== #
 # 2. DIFFERENTIAL EXPRESSION =======================================================
 # ================================================================================== #
+library(DESeq2)
+
+# Load in data again
+# cp SHERLOCK_2025/data/sherlock1_2_3_combat/sherlock1_2_3_counts_brush_integrated.csv KathyPhung/SHERLOCK3/data/processed/datawrangling_qc/combat_results/
+
+setwd(file.path(main.dir))
+hgnc_symbols_db <- readRDS(file.path(postQC.data.dir,"hgnc_symbols_db.rds"))
+clinical123_master <- readRDS(file.path(postQC.data.dir,  "master","clinical_sherlock123_master.rds"))
+colnames(clinical123_master)[which(colnames(clinical123_master) == "serpina1_z_snp_GRCh38_ch14_pos94378610")] <- "serpina1_snp"
+
+# Brush SHERLOCK1, 2 and 3 counts
+counts123_brush <- read.csv(file.path(combat.processed.data.dir, "sherlock1_2_3_counts_brush_integrated.csv"), check.names = FALSE, row.names = 1) #from SHERLOCK_SOP_integration.R script (copied from  "/groups/umcg-griac/tmp02/projects/SHERLOCK_2025/data/sherlock1_2_3_combat)
+clinical_brush <- clinical123_master[which(clinical123_master$sampletype == "Brush"),] 
+
+# Biopsy SHERLOCK 2 and 3 counts
+counts23_biopt <- readRDS(file.path(combat.processed.data.dir, "counts_biopt_combat.rds"))
+clinical_biopt <- clinical123_master[which(clinical123_master$sampletype == "Biopt"),] 
+
+
+#General COPD vs Severe COPD
+# MM = 0
+# MZ = 1
+# ZZ = 2
+
+table(clinical_brush$classification, clinical_brush$serpina1_snp)
+#                      0   1   2
+# Control             88   3   0
+# Mild-moderate COPD 116   9   0
+# Severe COPD        171  17   9
+
+table(clinical_biopt$classification, clinical_biopt$serpina1_snp)
+#                     0  1  2
+# Control            69  2  0
+# Mild-moderate COPD 98  6  0
+# Severe COPD        75  6  5
+
+
+# Brush
+# ================================================================================== #
+## 2a. General COPD   ==============================================================
+#    i) MM COPD (286) vs MZ COPD (26)
+#   ii) MM COPD (286) vs ZZ COPD (9)
+#  iii) MZ COPD (26) vs ZZ COPD (9)
+# ================================================================================== #
+clinical <- clinical_brush
+counts <- counts123_brush
+
+all(row.names(clinical) == colnames(counts))
+
+#Remove samples with NA serpina1 snp data
+clinical <- clinical[-which(is.na(clinical$serpina1_snp)),]
+counts <- counts[,row.names(clinical)]
+
+##### DGE #####
+dds <- DESeqDataSetFromMatrix(countData = counts,
+                              colData = clinical,
+                              design = ~ 0 + serpina1_snp + age + sex + smoking_status)
+
+# Filter the genes that are lowly expressed and normalize
+# Low exp genes affects statistics - can make p value very significant even if only a few samples are lowly expressed amongst other samples with no expression.  also affects multiple testing.
+# One method = keep row medians that are greater than 10 (ie. half of the samples for a gene must have a minimum number of 10 counts)
+keep <- rowMedians(counts(dds)) >= 10
+
+dds <- dds[keep,]
+dds <- DESeq(dds)
+
+# results extracts a result table from a DESeq analysis giving base means across samples, log2 fold changes, standard errors, test statistics, p-values and adjusted p-values;
+resultsNames(dds)
+
+results <- results(dds, contrast = c("exposure", "high", "low")) #This means we have set high as control and we define fold change based on high as baseline (log fold change = high - low). switch the order of low and high to make low the baseline
+
+tT <- as.data.frame(results)
+
+# is this done auto
+# tT$padj=p.adjust(tT$pvalue,method="BH")
+
+tT <- as.data.frame(results)
+tT <-tT[order(tT$pvalue),]
+# baseMean is the average of the normalized count values, dividing by size factors, taken over all samples.
+
+
+tT$Legend <- ifelse(
+  tT$padj < 0.05 & tT$log2FoldChange > 0, "Upregulated",
+  ifelse(
+    tT$padj < 0.05 & tT$log2FoldChange < 0, "Downregulated",
+    "Not Significant"))
+
+tT$Legend[is.na(tT$Legend)]="Not Significant"
+
+tT$Legend <- factor(tT$Legend, levels = c("Downregulated", "Upregulated", "Not Significant"))
+
+tT$gene_symbol=hgnc_symbols_db[row.names(tT), "SYMBOL"] #add hgnc symbols
+
+# if(showEnsemblID == TRUE){
+#for those with no hgnc symbol, label with ensembl id
+tT[which(is.na(tT$gene_symbol)), "gene_symbol"] <- row.names(tT)[(which(is.na(tT$gene_symbol)))] #listofresults_withensembl
+# }
+# 
+# else{
+#   #for those with no hgnc symbol, remove
+#   tT <- tT[-which(is.na(tT$gene_symbol)), ] #listofresults_hgnconly
+# }
+
+selection <-which(tT$padj<0.05)
+
+tT2 <- tT[selection,]
+
+write.csv(tT, file = paste0(diffexp.results.dir, "tT_", microplastic, ".csv"))
+write.csv(head(tT, n = 100) , file = paste0(diffexp.results.dir, "tT_top100_", microplastic, ".csv"))
 
 
 
 
-
-
-
-
+# ================================================================================== #
+## 2a. Severe COPD  ================================================================
+#    i) MM COPD (171) vs MZ COPD (17)
+#   ii) MM COPD (171) vs ZZ COPD (9)
+#  iii) MZ COPD (17) vs ZZ COPD (9)
+# ================================================================================== #
 
 
 
