@@ -1,12 +1,9 @@
-#SHERLOCK analysis of radiomics varaibles in relation to gene expression
-# Transcriptional changes associated with emphysema severity  in COPD patients, also comparing upper and lower lobe
-# Linking radiomics feature to transcriptomic signatures in COPD. Emphysema and mucus plugging scores from CT scans
+# SHERLOCK analysis of genotyping data (sepcifically SERPINA1 mutations) in relation to gene expression
+# Aim: comparing gene expression for MZ and ZZ patients (in COPD)
 
+# SETTING FOR HPC BATCH JOB (run script from 2.DIFFERENTIAL EXPRESSION as a batch job, everything before that was run in interactive)
+hpc_batch_job = TRUE
 
-options(error = function() { traceback(); quit(status = 1) })
-#options(error = ...) tells r to run the function
-#traceback()	prints the call stack (what functions were running in what order at the time of failure. traceback(2) means skip the top frame (the error handler itself).
-#quit(status = 1) tells R to exit and that the script has failed (1=FAIL and 0 = SUCCESS) - sacct command will show job status as FAILED
 
 # ### BASH ####
 # # note the .vcf.gz file needs the accompanying .tbi file
@@ -50,6 +47,8 @@ options(error = function() { traceback(); quit(status = 1) })
 # M(Herleen) rs199422209	
 # Q0amersfoort rs199422210		
 
+if(hpc_batch_job == FALSE){ #don't need this part for hpc
+
 
 # ================================================================================== #
 # A. SCRIPT SET UP =================================================================
@@ -61,12 +60,10 @@ library("readxl")
 # library("limma")
 # library("rstatix")
 # library("tibble")
-# library("ggvenn")
 # library("ggplot2")
 # library("ggrepel")
 # library("ggfortify")
 library("stringr")
-# library("EnsDb.Hsapiens.v79")
 # library("ggpubr")
 # library("edgeR")
 # library("DESeq2")
@@ -93,8 +90,7 @@ output.dir <- file.path(main.dir,"output")
 output.dir <- file.path(output.dir, "aatd")
 if(!exists(output.dir))dir.create(output.dir)
 
-
-# ================================================================================== #
+# ================================================================= #
 # 1. LOAD IN DATA ==================================================================
 # ================================================================================== #
 setwd(file.path(main.dir))
@@ -147,12 +143,21 @@ clinical_sk_all[,c("age", "packyears", "FEV1",
 #(mastertable_sherlock3.csv does not mean sherlock3 study, just the name of alen's sherlock1 file version 3))
 clinical_sk1_master <- readRDS(file.path(processed.data.dir, "SHERLOCK1", "clinical_sk1_master.rds"))
 clinical_sk1_master["LIB5426634_SAM24375606",]
-
+clinical_sk1_master <- clinical_sk1_master %>% 
+  dplyr::rename(
+    sex = crf_gender,
+    smoking_status = crf_smoking,
+    packyears = crf_packyears,
+    corticosteroid = crf_corticosteroid,
+    FVC_post= postbodybox_fvc_post ,
+    FEV1_FVC_post = postbodybox_fev1_fvc_post
+  ) 
+clinical_sk1_master$age <- as.numeric(clinical_sk1_master$age)
 common_cols <- intersect(colnames(clinical_sk1_master), colnames(clinical_sk_all))
-clinical_sk_all["LIB5426634_SAM24375606", common_cols] <- clinical_sk_all["LIB5426634_SAM24375606", common_cols]
+clinical_sk_all["LIB5426634_SAM24375606", common_cols] <- clinical_sk1_master["LIB5426634_SAM24375606", common_cols]
 
 
-# Get SERPINA1 Z mutation genotypes ------------------------------------------------------------------------------------------------------------
+## Get SERPINA1 Z mutation genotypes ------------------------------------------------------------------------------------------------------------
 # Pull out chromosome 14
 vcf_serpina1 <- read.vcfR(
   "data/processed/snp_array/chr14_serpina1_array.vcf.gz",
@@ -225,7 +230,7 @@ clinical2 <- cbind(clinical2, serpina1_z_snp_GRCh38_ch14_pos94378610 = serpina1_
 # MZ: 0.8 ≤ DS ≤ 1.2
 # ZZ: DS ≥ 1.8
 
-#For all unique PATIENTS -------------------------------------------------------------------------------------------------------
+#For all unique PATIENTS -------------------------------------------------------------------------------------------------------#
 table(clinical2[!duplicated(clinical2$Study.ID),"classification"], clinical2[!duplicated(clinical2$Study.ID),"serpina1_z_snp_GRCh38_ch14_pos94378610"])
 
 
@@ -236,7 +241,7 @@ table(clinical2[!duplicated(clinical2$Study.ID),"classification"], clinical2[!du
 
 
 
-# For samples ------------------------------------------------------------------
+# For samples ------------------------------------------------------------------#
 clinical_brush <-  clinical2[which(clinical2$sampletype == "Brush"),] #143 (sherlock1, 2 and 3)
 table(clinical_brush$classification, clinical_brush$serpina1_z_snp_GRCh38_ch14_pos94378610)
 
@@ -265,7 +270,7 @@ clinical123_master$serpina1_z_snp_GRCh38_ch14_pos94378610 <- serpina1_z_snp[matc
 
 
 
-##### ------------------------------------------ START EXTRA WRANGLING ------------------------------------------- ####
+### START EXTRA WRANGLING ------------------------------------------------------------------------------------------------------
 # 15/01/26: Came back to add this section after running 5_SHERLOCK_radiomics and SHERLOCK_sysmex_diffexp.R scripts,  before starting SHERLOCK_sysmex_multivariate.R script
 # The below wrangling is unrelated to this script. editing radiomics and sysmex variables columns so that clinical_sherlock123_master.rds IS THE MOST UPDATED FILE THAT CAN BE USED FOR EVERYTHING ! ###
 
@@ -309,18 +314,12 @@ clinical123_master$RELYMP <- as.numeric(clinical123_master$RELYMP)
 
 sapply(clinical123_master[sysmex_index_start:sysmex_index_end],class)
 
-##### ------------------------------------------ END EXTRA WRANGLING --------------------------------------------- ####
+### END EXTRA WRANGLING ---------------------------------------------------------------------------
 
 saveRDS(clinical123_master, file.path(postQC.data.dir,  "master","clinical_sherlock123_master.rds"))
 write.csv(clinical123_master, file.path(postQC.data.dir,  "master","clinical_sherlock123_master.csv"))
 
-
-
-
-
-
-
-# ---------------------------------------------------- SUMMARISING NUMBERS ------------------------------------------------------------- #
+### SUMMARISING NUMBERS ----------------------------------------------------------------------------------
 
 
 sherlock1_ids <- unique(clinical123_master[which(clinical123_master$batch == 1), "Study.ID"])
@@ -331,7 +330,7 @@ sherlock3_ids <- unique(clinical123_master[which(clinical123_master$batch == 3),
 ### 626 Patients have genotyping data
 ### 598 patients have clinical data in master file
 ### 541 patients have expression data
-### 24 PATIENTS THAT HAVE EXPRESSION DATA AND CLINICAL DATA BUT NO GENOTYPING data ### -------------------------------------------------
+### 24 PATIENTS THAT HAVE EXPRESSION DATA AND CLINICAL DATA BUT NO GENOTYPING data  ------------------------------------------------- #
 setdiff(unique(clinical123_master$Study.ID), row.names(serpina1_z_snp))
 cat(setdiff(unique(clinical123_master$Study.ID), row.names(serpina1_z_snp)), sep = "\n")
 
@@ -339,7 +338,7 @@ cat(setdiff(unique(clinical123_master$Study.ID), row.names(serpina1_z_snp)), sep
 # [9] "A_2700" "A_2642" "A_3063" "A_2890" "A_960"  "SEO066" "SEO069" "SEO070"
 # [17] "SEO075" "SEO077" "SEO078" "SEO087" "SEO185" "SEO196" "SEO507" "SEO418"
 
-# Breakdown------------------------------------------
+# Breakdown------------------------------------------#
 # SHERLOCK1
 sherlock1_ids[!(sherlock1_ids %in% row.names(serpina1_z_snp))]
 # [1] "A_1494" "A_922"  "A_978"  "A_1655" "A_1472" "A_1542" "A_1680" "A_1541"
@@ -356,20 +355,20 @@ sherlock2_ids[!(sherlock2_ids %in% row.names(serpina1_z_snp))]
 sherlock3_ids[!(sherlock3_ids %in% row.names(serpina1_z_snp))]
 # [1] "SEO069" "SEO070" "SEO077" "SEO185" "SEO418"
 
-### 432 PATIENTS THAT HAVE GENOTYPING DATA BUT NO EXPRESSION data ### -------------------------------------------------
+### 432 PATIENTS THAT HAVE GENOTYPING DATA BUT NO EXPRESSION data ### -------------------------------------------------#
 cat(intersect(clinical_sk_all$Study.ID, row.names(serpina1_z_snp)), sep = "\n")
 
-### 194 PATIENTS THAT HAVE GENOTYPING DATA BUT NO EXPRESSION data ### -------------------------------------------------
+### 194 PATIENTS THAT HAVE GENOTYPING DATA BUT NO EXPRESSION data ### -------------------------------------------------#
 setdiff(row.names(serpina1_z_snp), clinical123_master$Study.ID)
 cat(setdiff(row.names(serpina1_z_snp), clinical123_master$Study.ID), sep = "\n")
 
 
-### 179 PATIENTS THAT HAVE GENOTYPING DATA BUT NOT CLINICAL DATA  ### -------------------------------------------------
+### 179 PATIENTS THAT HAVE GENOTYPING DATA BUT NOT CLINICAL DATA  ### -------------------------------------------------#
 setdiff(row.names(serpina1_z_snp), sub("^A", "A_", raw_clinical$class_incl_study_id))
 cat(setdiff(row.names(serpina1_z_snp), sub("^A", "A_", raw_clinical$class_incl_study_id)), sep = "\n")
 
 
-### 74 PATIENTS THAT HAVE GENOTYPING DATA AND CLINICAL DATA BUT NO EXPRESSION DATA ### -------------------------------------------------
+### 74 PATIENTS THAT HAVE GENOTYPING DATA AND CLINICAL DATA BUT NO EXPRESSION DATA ### ---------------------------------#
 setdiff(setdiff(row.names(serpina1_z_snp), sub("^A", "A_", raw_clinical$class_incl_study_id)), matching_ids)
 cat(setdiff(setdiff(row.names(serpina1_z_snp), sub("^A", "A_", raw_clinical$class_incl_study_id)), matching_ids), sep = "\n")
 
@@ -386,18 +385,54 @@ unique(clinical123_master[intersect(colnames(sherlock1_counts), row.names(clinic
 
 
 intersect(row.names(serpina1_z_snp), raw_clinical$class_incl_study_id)
-### --------------------------------------------------------------------------------------------------------------------------------------
+### --------------------------------------------------------------------------------------------------------------------------------------#
 
+} #close the hpc_batch_job. script from here on will be run 
 
 # ================================================================================== #
 # 2. DIFFERENTIAL EXPRESSION =======================================================
 # ================================================================================== #
-library(DESeq2)
 
-# Load in data again
-# cp SHERLOCK_2025/data/sherlock1_2_3_combat/sherlock1_2_3_counts_brush_integrated.csv KathyPhung/SHERLOCK3/data/processed/datawrangling_qc/combat_results/
+options(error = function() { traceback(); quit(status = 1) })
+#options(error = ...) tells r to run the function
+#traceback()	prints the call stack (what functions were running in what order at the time of failure. traceback(2) means skip the top frame (the error handler itself).
+#quit(status = 1) tells R to exit and that the script has failed (1=FAIL and 0 = SUCCESS) - sacct command will show job status as FAILED
+
+# ================================================================================== #
+## 2A. SCRIPT SET UP ===============================================================
+# ================================================================================== #
+my_directory <- "/groups/umcg-griac/tmp02/projects/KathyPhung/SHERLOCK3"
+
+library("readxl")
+library("ggplot2")
+library("DESeq2")
+library("ggrepel")
+library("ggfortify")
+library("stringr")
+library("tidyverse")
+
+# ================================================================================== #
+## 2B. SET UP DIRECTORY & OUTPUT PATHS =============================================
+# ================================================================================== #
+main.dir <- my_directory
+
+#Data directory
+data.dir <- file.path(main.dir,"data")
+
+processed.data.dir <- file.path(data.dir,"processed")
+
+postQC.data.dir <- file.path(processed.data.dir, "datawrangling_qc")
+combat.processed.data.dir <- file.path(postQC.data.dir, "combat_results")
+
+#Output directory
+output.dir <- file.path(main.dir, "output","aatd")
 
 setwd(file.path(main.dir))
+
+# ================================================================================== #
+## 2.1. LOAD IN DATA ===============================================================
+# ================================================================================== #
+
 hgnc_symbols_db <- readRDS(file.path(postQC.data.dir,"hgnc_symbols_db.rds"))
 clinical123_master <- readRDS(file.path(postQC.data.dir,  "master","clinical_sherlock123_master.rds"))
 colnames(clinical123_master)[which(colnames(clinical123_master) == "serpina1_z_snp_GRCh38_ch14_pos94378610")] <- "serpina1_snp"
@@ -408,8 +443,8 @@ clinical_brush <- clinical123_master[which(clinical123_master$sampletype == "Bru
 
 # Biopsy SHERLOCK 2 and 3 counts
 counts23_biopt <- readRDS(file.path(combat.processed.data.dir, "counts_biopt_combat.rds"))
-clinical_biopt <- clinical123_master[which(clinical123_master$sampletype == "Biopt"),] 
-
+clinical_biopt <- clinical123_master[which(clinical123_master$sampletype == "Biopt"),]
+counts23_biopt <- counts23_biopt[,row.names(clinical_biopt)]
 
 #General COPD vs Severe COPD
 # MM = 0
@@ -428,27 +463,84 @@ table(clinical_biopt$classification, clinical_biopt$serpina1_snp)
 # Mild-moderate COPD 98  6  0
 # Severe COPD        75  6  5
 
+#make valid names
 
-# Brush
 # ================================================================================== #
-## 2a. General COPD   ==============================================================
-#    i) MM COPD (286) vs MZ COPD (26)
-#   ii) MM COPD (286) vs ZZ COPD (9)
-#  iii) MZ COPD (26) vs ZZ COPD (9)
+# 3. DIFFEERENTIAL EXPRESSION (DESeq2) =============================================
+# General COPD (Subset only for Mild/Mod and Severe COPD. Compare the genotypes)
+# Severe COPD (Subset for only Severe COPD. Compare the genotypes)
 # ================================================================================== #
-clinical <- clinical_brush
-counts <- counts123_brush
+#DESEQ DIRECTORY
+diffexp.dir <- file.path(output.dir, "diffexp_serpina1_deseq")
+if(!exists(diffexp.dir))dir.create(diffexp.dir)
 
-all(row.names(clinical) == colnames(counts))
 
-#Remove samples with NA serpina1 snp data
-clinical <- clinical[-which(is.na(clinical$serpina1_snp)),]
+diffexp_deseq_func <- function(sampletype, disease_group){
+  cat(paste("Starting 3. DIFFERENTIAL EXPRESSION (DESeq)", sampletype), format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+  
+  if(disease_group == "general_copd"){
+  this.diffexp.dir <- file.path(diffexp.dir, "general_copd")}
+  
+  if(disease_group == "severe_copd"){
+  this.diffexp.dir <- file.path(diffexp.dir, "severe_copd")}
+  
+  if(!exists(this.diffexp.dir))dir.create(this.diffexp.dir)
+  
+  #Results and figures directory
+  diffexp.results.dir <- file.path(this.diffexp.dir, "results")
+  if(!exists(diffexp.results.dir))dir.create(diffexp.results.dir)
+  
+  diffexp.figures.dir <- file.path(this.diffexp.dir, "figures")
+  if(!exists(diffexp.figures.dir))dir.create(diffexp.figures.dir)
+  
+  
+  if(sampletype == "brush"){
+      clinical <- clinical_brush
+      counts <- counts123_brush
+  }
+  
+  if(sampletype == "biopt"){
+    clinical <- clinical_biopt
+    counts <- counts23_biopt
+  }
+
+  
+  if(all(colnames(counts) == row.names(clinical)) == FALSE){ 
+    stop("all(colnames(counts) == row.names(clinical) = FALSE)") }
+  
+  #Remove samples with NA serpina1 snp data
+  clinical <- clinical[-which(is.na(clinical$serpina1_snp)),]
+  counts <- counts[,row.names(clinical)]
+  
+  #make names valid
+  clinical$smoking_status<- make.names(clinical$smoking_status)
+  
+if(disease_group == "general_copd"){
+#Only include COPD samples
+clinical <- clinical[-which(clinical$classification == "Control"),]
 counts <- counts[,row.names(clinical)]
 
-##### DGE #####
+# DGE
 dds <- DESeqDataSetFromMatrix(countData = counts,
                               colData = clinical,
                               design = ~ 0 + serpina1_snp + age + sex + smoking_status)
+}
+
+
+
+if(disease_group == "severe_copd"){
+  #Only include COPD samples
+  clinical <- clinical[which(clinical$classification == "Severe COPD"),]
+  counts <- counts[,row.names(clinical)]
+  
+  # DGE
+  dds <- DESeqDataSetFromMatrix(countData = counts,
+                                colData = clinical,
+                                design = ~ 0 + serpina1_snp + age + sex + packyears) #no smokers in severe group
+  
+}
+
+
 
 # Filter the genes that are lowly expressed and normalize
 # Low exp genes affects statistics - can make p value very significant even if only a few samples are lowly expressed amongst other samples with no expression.  also affects multiple testing.
@@ -461,7 +553,23 @@ dds <- DESeq(dds)
 # results extracts a result table from a DESeq analysis giving base means across samples, log2 fold changes, standard errors, test statistics, p-values and adjusted p-values;
 resultsNames(dds)
 
-results <- results(dds, contrast = c("exposure", "high", "low")) #This means we have set high as control and we define fold change based on high as baseline (log fold change = high - low). switch the order of low and high to make low the baseline
+listofcontrasts <- list(
+  MZ_MM = c("serpina1_snp", "1", "0"),#This means we have set snp1 (MZ) as control and we define fold change based on snp1 as baseline (log fold change = MZ - MMM)
+  ZZ_MM = c("serpina1_snp", "2", "0"), 
+  ZZ_MZ = c("serpina1_snp", "2", "1")
+
+)  
+
+listoftT <- list()
+listoftT2 <- list()
+listofvolcano <- list()
+
+for (contrast in names(listofcontrasts)){
+  cat(paste(sampletype, contrast), format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+  
+results <- results(dds, contrast = c(listofcontrasts[[contrast]][1], #variable name
+                                     listofcontrasts[[contrast]][2], #reference 
+                                     listofcontrasts[[contrast]][3])) #other comparison
 
 tT <- as.data.frame(results)
 
@@ -499,67 +607,245 @@ selection <-which(tT$padj<0.05)
 
 tT2 <- tT[selection,]
 
-write.csv(tT, file = paste0(diffexp.results.dir, "tT_", microplastic, ".csv"))
-write.csv(head(tT, n = 100) , file = paste0(diffexp.results.dir, "tT_top100_", microplastic, ".csv"))
+listoftT[[contrast]] <- tT 
+listoftT2[[contrast]] <- tT2
+
+write.csv(tT2, file = file.path(diffexp.results.dir, paste0(sampletype, "_", contrast, "_tT2.csv")))
+
+
+# ================================================================================== #
+# 3.1. VOLCANO PLOT ================================================================
+# ================================================================================== #
+cat(paste("Starting 3.1. VOLCANO PLOT", contrast), format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+
+volcano <- ggplot(tT, aes(x = log2FoldChange, y = -log10(pvalue))) +
+  ggtitle(paste0(sampletype,": ",contrast)) +
+  geom_point(aes(color = Legend)) +
+  scale_color_manual(values = c("Downregulated" = "blue", "Not Significant" = "grey", "Upregulated" = "red"), drop = FALSE)+
+  geom_hline(yintercept =-log10(max(tT2$pvalue)),colour="black", linetype="dashed")+
+  geom_text_repel(data = subset(tT2[1:30,]),
+                  aes(label= gene_symbol),size = 4, box.padding = unit(0.35, "lines"),
+                  point.padding = unit(0.3, "lines") ) +
+  theme_bw(base_size = 18) + theme(legend.position = "bottom",
+                                   legend.text = element_text(size = 14),
+                                   legend.title = element_text(size = 16)) 
+
+listofvolcano[[contrast]] <- volcano
+
+ggsave(volcano, filename = file.path(diffexp.figures.dir, paste0(sampletype, "_", contrast, "_111volcano.png")),
+       width = 25, height = 25,
+       units = "cm")
+
+} #close listofcontrasts loop
+
+listofresults[[disease_group]][[sampletype]] <- list(tT = listoftT, tT2 = listoftT2, volcano = listofvolcano)
+
+} #end diffexp deseq function
+
+
+
+listofresults <- list(
+  general_copd = list(),
+  severe_copd  = list()
+)
+
+diffexp_deseq_func(disease_group = "general_copd", sampletype = "brush")
+diffexp_deseq_func(disease_group = "general_copd", sampletype = "biopt")
+
+diffexp_deseq_func(disease_group = "severe_copd", sampletype = "brush")
+diffexp_deseq_func(disease_group = "severe_copd", sampletype = "biopt")
+
+
+
+#Save all results
+saveRDS(listofresults[["general_copd"]], file = file.path(diffexp.dir, "general_copd", "results", "listofresults.rds"))
+saveRDS(listofresults[["severe_copd"]], file = file.path(diffexp.dir, "severe_copd", "results","listofresults.rds"))
+
 
 
 
 
 # ================================================================================== #
-## 2a. Severe COPD  ================================================================
-#    i) MM COPD (171) vs MZ COPD (17)
-#   ii) MM COPD (171) vs ZZ COPD (9)
-#  iii) MZ COPD (17) vs ZZ COPD (9)
+# 4. DIFFEERENTIAL EXPRESSION (edgeR) ================================================
+# General COPD (Subset only for Mild/Mod and Severe COPD. Compare the genotypes)
+# Severe COPD (Subset for only Severe COPD. Compare the genotypes)
 # ================================================================================== #
+library(edgeR)
+diffexp.dir <- file.path(output.dir, "diffexp_serpina1_edgeR")
+if(!exists(diffexp.dir)) dir.create(diffexp.dir)
+
+diffexp_edgeR_func <- function(sampletype, disease_group){
+  cat(paste("Starting 4. DIFFERENTIAL EXPRESSION (edgeR)", sampletype), format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+  
+  if(disease_group == "general_copd"){
+    this.diffexp.dir <- file.path(diffexp.dir, "general_copd")}
+  
+  if(disease_group == "severe_copd"){
+    this.diffexp.dir <- file.path(diffexp.dir, "severe_copd")}
+  
+  if(!exists(this.diffexp.dir))dir.create(this.diffexp.dir)
+  
+  #Results and figures directory
+  diffexp.results.dir <- file.path(this.diffexp.dir, "results")
+  if(!exists(diffexp.results.dir))dir.create(diffexp.results.dir)
+  
+  diffexp.figures.dir <- file.path(this.diffexp.dir, "figures")
+  if(!exists(diffexp.figures.dir))dir.create(diffexp.figures.dir)
+  
+  
+  if(sampletype == "brush"){
+    clinical <- clinical_brush
+    counts <- counts123_brush
+  }
+  
+  if(sampletype == "biopt"){
+    clinical <- clinical_biopt
+    counts <- counts23_biopt
+  }
+  
+  
+  if(all(colnames(counts) == row.names(clinical)) == FALSE){ 
+    stop("all(colnames(counts) == row.names(clinical) = FALSE)") }
+  
+  #Remove samples with NA serpina1 snp data
+  clinical <- clinical[-which(is.na(clinical$serpina1_snp)),]
+  counts <- counts[,row.names(clinical)]
+  
+  
+  #make names valid
+  clinical$smoking_status<- make.names(clinical$smoking_status)
+  
+  if(disease_group == "general_copd"){
+    #Only include COPD samples
+    clinical <- clinical[-which(clinical$classification == "Control"),]
+    counts <- counts[,row.names(clinical)]
+    
+    design <- model.matrix(~ 0 + serpina1_snp + age + sex + smoking_status,
+                           data = clinical) 
+  }
+  
+  
+  
+  if(disease_group == "severe_copd"){
+    #Only include COPD samples
+    clinical <- clinical[which(clinical$classification == "Severe COPD"),]
+    counts <- counts[,row.names(clinical)]
+    
+    design <- model.matrix(~ 0 + serpina1_snp + age + sex + packyears,
+                           data = clinical) 
+    
+    
+  }
+  
+  # colnames(design)[1:3] <- c(levels(as.factor(clinical$serpina1_snp))) #cant do this as names will be invalid for making contrasts ("0","1","2")
+  
+  DGEL<- DGEList(counts=counts, group = clinical$classification) 
+  
+  #FILTER
+  keep <- filterByExpr(DGEL) 
+  # keep <- which(rowMedians(as.matrix(DGEL))>10) 
+  # keep <- rowSums(cpm(expression)>100) >= 2
+  
+  DGEL<-DGEL[keep, , keep.lib.sizes=FALSE] # When you subset a DGEList and specify keep.lib.sizes=FALSE, the lib.size for each sample will be recalculated to be the sum of the counts left in the rows of the experiment for each sample.
+  
+  # NORMALISE
+  DGEL<- calcNormFactors(DGEL,method = "TMM")
+  
+  # ESTIMATE DISPERSON
+  DGEL <- estimateDisp(DGEL, design)
+  
+  # FIT MODEL
+  fit <- glmQLFit(DGEL, design)  #fit the GLM (design) to the DGEL(the DGEL object, which contains the counts data that has been filtered,normalised and dispersons estimtated)
+  
+  
+  my.contrasts <- makeContrasts(
+    MZ_MM = serpina1_snp1 - serpina1_snp0,
+    ZZ_MM = serpina1_snp2 - serpina1_snp0,
+    ZZ_MZ = serpina1_snp2 - serpina1_snp1,
+    levels = design) 
+  
+  
+  listoftT <- list()
+  listoftT2 <- list()
+  listofvolcano <- list()  
+  
+  for (contrast in colnames(my.contrasts)){
+    cat(paste(sampletype, contrast), format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+    
+    qlf <- glmQLFTest(fit, contrast=my.contrasts[,contrast]) #after fitting GLM to counts data (glmQLFit), glmQLFTest perform quasi likelihood f-tests to test for differential expression. ie. hypothesis testing for differential expression. (make inferences or draw conclusions about the data)
+    tT <- topTags(qlf,n=nrow(DGEL))$table #topTags gets top genes, here we want all of the genes, edgeR's default p.adjust method is BH
+    tT$Legend <- ifelse(
+      tT$FDR < 0.05 & tT$logFC > 0, "Upregulated", # try >1
+      ifelse(
+        tT$FDR < 0.05 & tT$logFC < 0, "Downregulated",# try <-1
+        "Not Significant"))
+    
+    tT$Legend[is.na(tT$Legend)]="Not significant"
+    
+    tT$gene_symbol=hgnc_symbols_db[row.names(tT), "SYMBOL"] #add hgnc symbols
+    
+    #for those with no hgnc symbol, label with ensembl id
+    tT[which(is.na(tT$gene_symbol)), "gene_symbol"] <- row.names(tT)[(which(is.na(tT$gene_symbol)))] #listofresults_withensembl
+
+    
+    selection <-which(tT$FDR<0.05)
+    # selection <-which((tT$logFC>1|tT$logFC< -1)&tT$FDR<0.05)
+    
+    tT2 <- tT[selection,]
+    
+    listoftT[[contrast]] <- tT 
+    listoftT2[[contrast]] <- tT2
+    
+    write.csv(tT2, file = file.path(diffexp.results.dir, paste0(sampletype, "_", contrast, "_tT2.csv")))
+    
+    
+# ================================================================================== #
+# 4.1. VOLCANO PLOT ================================================================
+# ================================================================================== #
+    cat(paste("Starting 4.1. VOLCANO PLOT", contrast), format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+    
+    volcano <- ggplot(tT, aes(x = logFC, y = -log10(PValue))) +
+      ggtitle(paste0(sampletype,": ",contrast)) +
+      geom_point(aes(color = Legend)) +
+      scale_color_manual(values = c("Downregulated" = "blue", "Not Significant" = "grey", "Upregulated" = "red"), drop = FALSE)+
+      geom_hline(yintercept =-log10(max(tT2$PValue)),colour="black", linetype="dashed")+
+      geom_text_repel(data = subset(tT2[1:30,]),
+                      aes(label= gene_symbol),size = 4, box.padding = unit(0.35, "lines"),
+                      point.padding = unit(0.3, "lines") ) +
+      theme_bw(base_size = 18) + theme(legend.position = "bottom",
+                                       legend.text = element_text(size = 14),
+                                       legend.title = element_text(size = 16)) 
+    
+    listofvolcano[[contrast]] <- volcano
+    
+    ggsave(volcano, filename = file.path(diffexp.figures.dir, paste0(sampletype, "_", contrast, "_volcano.png")),
+           width = 25, height = 25,
+           units = "cm")
+    
+  } #close listofcontrasts loop
+  
+  listofresults[[disease_group]][[sampletype]] <- list(tT = listoftT, tT2 = listoftT2, volcano = listofvolcano)
+  
+} #end diffexp deseq function
 
 
 
+listofresults <- list(
+  general_copd = list(),
+  severe_copd  = list()
+)
+
+diffexp_edgeR_func(disease_group = "general_copd", sampletype = "brush")
+diffexp_edgeR_func(disease_group = "general_copd", sampletype = "biopt")
+
+diffexp_edgeR_func(disease_group = "severe_copd", sampletype = "brush")
+diffexp_edgeR_func(disease_group = "severe_copd", sampletype = "biopt")
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-#from rachael's script
-# test=cbind(getCHROM(vcf),
-#            getPOS(vcf),
-#            getREF(vcf),
-#            getALT(vcf), 
-#            getQUAL(vcf), 
-#            extract.info(vcf, element = "QD", as.numeric=T), 
-#            extract.info(vcf, element = "MQ", as.numeric=T),
-#            extract.info(vcf, element = "FS", as.numeric=T),
-#            extract.info(vcf, element = "SOR", as.numeric=T), 
-#            extract.gt(vcf,element = "GT", as.numeric=FALSE),
-#            extract.gt(vcf, element = "AD", as.numeric=FALSE),
-#            extract.info(vcf, element = "ANN", as.numeric=FALSE), 
-#            extract.info(vcf, element = "GNOMAD_AF", as.numeric=FALSE),
-#            
-# # Load the VCF
-# vcf <- read.vcfR(file.path(data.dir, "raw", "snp_array", "20250910_RES0225_GSAv3+.imputed.vcf"), verbose = FALSE)
-#                  
-# # Extract genotype matrix
-# gt <- extract.gt(vcf, element="GT")  # rows=SNPs, cols=samples
-# 
-# write.csv(gt, file = file.path(data.dir, "processed", "snp_array","genotypes.csv"), row.names = TRUE)
-
+#Save all results
+saveRDS(listofresults[["general_copd"]], file = file.path(diffexp.dir, "general_copd", "results", "listofresults.rds"))
+saveRDS(listofresults[["severe_copd"]], file = file.path(diffexp.dir, "severe_copd", "results","listofresults.rds"))
 
 
 cat("END OF THIS JOB", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
