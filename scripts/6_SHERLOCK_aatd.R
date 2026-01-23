@@ -648,208 +648,19 @@ diffexp_deseq_func <- function(sampletype, disease_group){
     
   } #close listofcontrasts loop
   
-  listofresults[[disease_group]][[sampletype]] <- list(tT = listoftT, tT2 = listoftT2, volcano = listofvolcano)
+  listofresults <- list(tT = listoftT, tT2 = listoftT2, volcano = listofvolcano)
   
 } #end diffexp deseq function
 
 
-# Run function for general COPD
-diffexp_deseq_func(disease_group = "general_copd", sampletype = "brush")
-diffexp_deseq_func(disease_group = "general_copd", sampletype = "biopt")
-
-#Run function for severe COPD
-diffexp_deseq_func(disease_group = "severe_copd", sampletype = "brush")
-diffexp_deseq_func(disease_group = "severe_copd", sampletype = "biopt")
-
-
-#Save all results (Made seperate directoriess for general COPD and severe COPD.) 
-#listofresults contains lists "brush" and "biopt", which each contain lists "listoftT", "listoftT2" and "listofvolcano")
-saveRDS(listofresults[["general_copd"]], file = file.path(diffexp.dir, "general_copd", "results", "listofresults.rds"))
-saveRDS(listofresults[["severe_copd"]], file = file.path(diffexp.dir, "severe_copd", "results","listofresults.rds"))
-
-
-
-
-
-# ================================================================================== #
-# 4. DIFFEERENTIAL EXPRESSION (edgeR) ================================================
-# General COPD (Subset only for Mild/Mod and Severe COPD. Compare the genotypes)
-# Severe COPD (Subset for only Severe COPD. Compare the genotypes)
-# ================================================================================== #
-library(edgeR)
-diffexp.dir <- file.path(output.dir, "diffexp_serpina1_edgeR")
-if(!exists(diffexp.dir)) dir.create(diffexp.dir)
-
-# Make empty list to save results into
-listofresults <- list(
-  general_copd = list(),
-  severe_copd  = list()
-)
-
-# Create function to run differential epxression with edgeR
-diffexp_edgeR_func <- function(sampletype, disease_group){
-  cat(paste("Starting 4. DIFFERENTIAL EXPRESSION (edgeR)", sampletype), format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
-  
-  if(disease_group == "general_copd"){
-    this.diffexp.dir <- file.path(diffexp.dir, "general_copd")}
-  
-  if(disease_group == "severe_copd"){
-    this.diffexp.dir <- file.path(diffexp.dir, "severe_copd")}
-  
-  if(!exists(this.diffexp.dir))dir.create(this.diffexp.dir)
-  
-  #Results and figures directory
-  diffexp.results.dir <- file.path(this.diffexp.dir, "results")
-  if(!exists(diffexp.results.dir))dir.create(diffexp.results.dir)
-  
-  diffexp.figures.dir <- file.path(this.diffexp.dir, "figures")
-  if(!exists(diffexp.figures.dir))dir.create(diffexp.figures.dir)
-  
-  
-  if(sampletype == "brush"){
-    clinical <- clinical_brush
-    counts <- counts123_brush
-  }
-  
-  if(sampletype == "biopt"){
-    clinical <- clinical_biopt
-    counts <- counts23_biopt
-  }
-  
-  
-  if(all(colnames(counts) == row.names(clinical)) == FALSE){ 
-    stop("all(colnames(counts) == row.names(clinical) = FALSE)") }
-  
-  #Remove samples with NA serpina1 snp data
-  clinical <- clinical[-which(is.na(clinical$serpina1_snp)),]
-  counts <- counts[,row.names(clinical)]
-  
-  
-  #make names valid
-  clinical$smoking_status<- make.names(clinical$smoking_status)
-  
-  if(disease_group == "general_copd"){
-    #Only include COPD samples
-    clinical <- clinical[-which(clinical$classification == "Control"),]
-    counts <- counts[,row.names(clinical)]
-    
-    design <- model.matrix(~ 0 + serpina1_snp + age + sex + smoking_status,
-                           data = clinical) 
-  }
-  
-  
-  
-  if(disease_group == "severe_copd"){
-    #Only include COPD samples
-    clinical <- clinical[which(clinical$classification == "Severe COPD"),]
-    counts <- counts[,row.names(clinical)]
-    
-    design <- model.matrix(~ 0 + serpina1_snp + age + sex + packyears,
-                           data = clinical) 
-    
-    
-  }
-  
-  #cant do this as leve sof serpina1_snp are("0","1","2") which are invalid names for making contrasts
-  # colnames(design)[1:3] <- c(levels(as.factor(clinical$serpina1_snp))) 
-  
-  DGEL<- DGEList(counts=counts, group = clinical$classification) 
-  
-  #FILTER
-  keep <- filterByExpr(DGEL) 
-  # keep <- which(rowMedians(as.matrix(DGEL))>10) 
-  # keep <- rowSums(cpm(expression)>100) >= 2
-  
-  DGEL<-DGEL[keep, , keep.lib.sizes=FALSE] # When you subset a DGEList and specify keep.lib.sizes=FALSE, the lib.size for each sample will be recalculated to be the sum of the counts left in the rows of the experiment for each sample.
-  
-  # NORMALISE
-  DGEL<- calcNormFactors(DGEL,method = "TMM")
-  
-  # ESTIMATE DISPERSON
-  DGEL <- estimateDisp(DGEL, design)
-  
-  # FIT MODEL
-  fit <- glmQLFit(DGEL, design)  #fit the GLM (design) to the DGEL(the DGEL object, which contains the counts data that has been filtered,normalised and dispersons estimtated)
-  
-  
-  my.contrasts <- makeContrasts(
-    MZ_MM = serpina1_snp1 - serpina1_snp0,
-    ZZ_MM = serpina1_snp2 - serpina1_snp0,
-    ZZ_MZ = serpina1_snp2 - serpina1_snp1,
-    levels = design) 
-  
-  
-  listoftT <- list()
-  listoftT2 <- list()
-  listofvolcano <- list()  
-  
-  for (contrast in colnames(my.contrasts)){
-    cat(paste(sampletype, contrast), format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
-    
-    qlf <- glmQLFTest(fit, contrast=my.contrasts[,contrast]) #after fitting GLM to counts data (glmQLFit), glmQLFTest perform quasi likelihood f-tests to test for differential expression. ie. hypothesis testing for differential expression. (make inferences or draw conclusions about the data)
-    tT <- topTags(qlf,n=nrow(DGEL))$table #topTags gets top genes, here we want all of the genes, edgeR's default p.adjust method is BH
-    tT$Legend <- ifelse(
-      tT$FDR < 0.05 & tT$logFC > 0, "Upregulated", 
-      ifelse(
-        tT$FDR < 0.05 & tT$logFC < 0, "Downregulated",
-        "Not Significant"))
-    
-    tT$Legend[is.na(tT$Legend)]="Not significant"
-    
-    tT$gene_symbol=hgnc_symbols_db[row.names(tT), "SYMBOL"] #add hgnc symbols
-    
-    #for those with no hgnc symbol, label with ensembl id
-    tT[which(is.na(tT$gene_symbol)), "gene_symbol"] <- row.names(tT)[(which(is.na(tT$gene_symbol)))] #listofresults_withensembl
-    
-    
-    selection <-which(tT$FDR<0.05)
-    # selection <-which((tT$logFC>1|tT$logFC< -1)&tT$FDR<0.05) #don't need logFC cutoffs here
-    
-    tT2 <- tT[selection,]
-    
-    listoftT[[contrast]] <- tT 
-    listoftT2[[contrast]] <- tT2
-    
-    write.csv(tT2, file = file.path(diffexp.results.dir, paste0(sampletype, "_", contrast, "_tT2.csv")))
-    
-    
-    # ================================================================================== #
-    # 4.1. VOLCANO PLOT ================================================================
-    # ================================================================================== #
-    cat(paste("Starting 4.1. VOLCANO PLOT", contrast), format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
-    
-    volcano <- ggplot(tT, aes(x = logFC, y = -log10(PValue))) +
-      ggtitle(paste0(sampletype,": ",contrast)) +
-      geom_point(aes(color = Legend)) +
-      scale_color_manual(values = c("Downregulated" = "blue", "Not Significant" = "grey", "Upregulated" = "red"), drop = FALSE)+
-      geom_hline(yintercept =-log10(max(tT2$PValue)),colour="black", linetype="dashed")+
-      geom_text_repel(data = subset(tT2[1:30,]),
-                      aes(label= gene_symbol),size = 4, box.padding = unit(0.35, "lines"),
-                      point.padding = unit(0.3, "lines") ) +
-      theme_bw(base_size = 18) + theme(legend.position = "bottom",
-                                       legend.text = element_text(size = 14),
-                                       legend.title = element_text(size = 16)) 
-    
-    listofvolcano[[contrast]] <- volcano
-    
-    ggsave(volcano, filename = file.path(diffexp.figures.dir, paste0(sampletype, "_", contrast, "_volcano.png")),
-           width = 25, height = 25,
-           units = "cm")
-    
-  } #close listofcontrasts loop
-  
-  return(listofresults[[sampletype]] <- list(tT = listoftT, tT2 = listoftT2, volcano = listofvolcano))
-  
-} #end diffexp edgeR function
-
 
 # Run function on general COPD data
-listofresults_brush_general <- diffexp_edgeR_func(disease_group = "general_copd", sampletype = "brush")
-listofresults_biopt_general <- diffexp_edgeR_func(disease_group = "general_copd", sampletype = "biopt")
+listofresults_brush_general <- diffexp_deseq_func(disease_group = "general_copd", sampletype = "brush")
+listofresults_biopt_general <- diffexp_deseq_func(disease_group = "general_copd", sampletype = "biopt")
 
 # Run function on severe COPD data
-listofresults_brush_severe <- diffexp_edgeR_func(disease_group = "severe_copd", sampletype = "brush")
-listofresults_biopt_severe <- diffexp_edgeR_func(disease_group = "severe_copd", sampletype = "biopt")
+listofresults_brush_severe <- diffexp_deseq_func(disease_group = "severe_copd", sampletype = "brush")
+listofresults_biopt_severe <- diffexp_deseq_func(disease_group = "severe_copd", sampletype = "biopt")
 
 
 #Save all results (Made seperate directoriess for general COPD and severe COPD.) 
@@ -863,10 +674,203 @@ saveRDS(list(brush = listofresults_brush_severe,
         file = file.path(diffexp.dir, "severe_copd", "results","listofresults.rds"))
 
 
+# 
+# # ================================================================================== #
+# # 4. DIFFEERENTIAL EXPRESSION (edgeR) ================================================
+# # General COPD (Subset only for Mild/Mod and Severe COPD. Compare the genotypes)
+# # Severe COPD (Subset for only Severe COPD. Compare the genotypes)
+# # ================================================================================== #
+# library(edgeR)
+# diffexp.dir <- file.path(output.dir, "diffexp_serpina1_edgeR")
+# if(!exists(diffexp.dir)) dir.create(diffexp.dir)
+# 
+# # Make empty list to save results into
+# listofresults <- list(
+#   general_copd = list(),
+#   severe_copd  = list()
+# )
+# 
+# # Create function to run differential epxression with edgeR
+# diffexp_edgeR_func <- function(sampletype, disease_group){
+#   cat(paste("Starting 4. DIFFERENTIAL EXPRESSION (edgeR)", sampletype), format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+#   
+#   if(disease_group == "general_copd"){
+#     this.diffexp.dir <- file.path(diffexp.dir, "general_copd")}
+#   
+#   if(disease_group == "severe_copd"){
+#     this.diffexp.dir <- file.path(diffexp.dir, "severe_copd")}
+#   
+#   if(!exists(this.diffexp.dir))dir.create(this.diffexp.dir)
+#   
+#   #Results and figures directory
+#   diffexp.results.dir <- file.path(this.diffexp.dir, "results")
+#   if(!exists(diffexp.results.dir))dir.create(diffexp.results.dir)
+#   
+#   diffexp.figures.dir <- file.path(this.diffexp.dir, "figures")
+#   if(!exists(diffexp.figures.dir))dir.create(diffexp.figures.dir)
+#   
+#   
+#   if(sampletype == "brush"){
+#     clinical <- clinical_brush
+#     counts <- counts123_brush
+#   }
+#   
+#   if(sampletype == "biopt"){
+#     clinical <- clinical_biopt
+#     counts <- counts23_biopt
+#   }
+#   
+#   
+#   if(all(colnames(counts) == row.names(clinical)) == FALSE){ 
+#     stop("all(colnames(counts) == row.names(clinical) = FALSE)") }
+#   
+#   #Remove samples with NA serpina1 snp data
+#   clinical <- clinical[-which(is.na(clinical$serpina1_snp)),]
+#   counts <- counts[,row.names(clinical)]
+#   
+#   
+#   #make names valid
+#   clinical$smoking_status<- make.names(clinical$smoking_status)
+#   
+#   if(disease_group == "general_copd"){
+#     #Only include COPD samples
+#     clinical <- clinical[-which(clinical$classification == "Control"),]
+#     counts <- counts[,row.names(clinical)]
+#     
+#     design <- model.matrix(~ 0 + serpina1_snp + age + sex + smoking_status,
+#                            data = clinical) 
+#   }
+#   
+#   
+#   
+#   if(disease_group == "severe_copd"){
+#     #Only include COPD samples
+#     clinical <- clinical[which(clinical$classification == "Severe COPD"),]
+#     counts <- counts[,row.names(clinical)]
+#     
+#     design <- model.matrix(~ 0 + serpina1_snp + age + sex + packyears,
+#                            data = clinical) 
+#     
+#     
+#   }
+#   
+#   #cant do this as leve sof serpina1_snp are("0","1","2") which are invalid names for making contrasts
+#   # colnames(design)[1:3] <- c(levels(as.factor(clinical$serpina1_snp))) 
+#   
+#   DGEL<- DGEList(counts=counts, group = clinical$classification) 
+#   
+#   #FILTER
+#   keep <- filterByExpr(DGEL) 
+#   # keep <- which(rowMedians(as.matrix(DGEL))>10) 
+#   # keep <- rowSums(cpm(expression)>100) >= 2
+#   
+#   DGEL<-DGEL[keep, , keep.lib.sizes=FALSE] # When you subset a DGEList and specify keep.lib.sizes=FALSE, the lib.size for each sample will be recalculated to be the sum of the counts left in the rows of the experiment for each sample.
+#   
+#   # NORMALISE
+#   DGEL<- calcNormFactors(DGEL,method = "TMM")
+#   
+#   # ESTIMATE DISPERSON
+#   DGEL <- estimateDisp(DGEL, design)
+#   
+#   # FIT MODEL
+#   fit <- glmQLFit(DGEL, design)  #fit the GLM (design) to the DGEL(the DGEL object, which contains the counts data that has been filtered,normalised and dispersons estimtated)
+#   
+#   
+#   my.contrasts <- makeContrasts(
+#     MZ_MM = serpina1_snp1 - serpina1_snp0,
+#     ZZ_MM = serpina1_snp2 - serpina1_snp0,
+#     ZZ_MZ = serpina1_snp2 - serpina1_snp1,
+#     levels = design) 
+#   
+#   
+#   listoftT <- list()
+#   listoftT2 <- list()
+#   listofvolcano <- list()  
+#   
+#   for (contrast in colnames(my.contrasts)){
+#     cat(paste(sampletype, contrast), format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+#     
+#     qlf <- glmQLFTest(fit, contrast=my.contrasts[,contrast]) #after fitting GLM to counts data (glmQLFit), glmQLFTest perform quasi likelihood f-tests to test for differential expression. ie. hypothesis testing for differential expression. (make inferences or draw conclusions about the data)
+#     tT <- topTags(qlf,n=nrow(DGEL))$table #topTags gets top genes, here we want all of the genes, edgeR's default p.adjust method is BH
+#     tT$Legend <- ifelse(
+#       tT$FDR < 0.05 & tT$logFC > 0, "Upregulated", 
+#       ifelse(
+#         tT$FDR < 0.05 & tT$logFC < 0, "Downregulated",
+#         "Not Significant"))
+#     
+#     tT$Legend[is.na(tT$Legend)]="Not significant"
+#     
+#     tT$gene_symbol=hgnc_symbols_db[row.names(tT), "SYMBOL"] #add hgnc symbols
+#     
+#     #for those with no hgnc symbol, label with ensembl id
+#     tT[which(is.na(tT$gene_symbol)), "gene_symbol"] <- row.names(tT)[(which(is.na(tT$gene_symbol)))] #listofresults_withensembl
+#     
+#     
+#     selection <-which(tT$FDR<0.05)
+#     # selection <-which((tT$logFC>1|tT$logFC< -1)&tT$FDR<0.05) #don't need logFC cutoffs here
+#     
+#     tT2 <- tT[selection,]
+#     
+#     listoftT[[contrast]] <- tT 
+#     listoftT2[[contrast]] <- tT2
+#     
+#     write.csv(tT2, file = file.path(diffexp.results.dir, paste0(sampletype, "_", contrast, "_tT2.csv")))
+#     
+#     
+#     # ================================================================================== #
+#     # 4.1. VOLCANO PLOT ================================================================
+#     # ================================================================================== #
+#     cat(paste("Starting 4.1. VOLCANO PLOT", contrast), format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+#     
+#     volcano <- ggplot(tT, aes(x = logFC, y = -log10(PValue))) +
+#       ggtitle(paste0(sampletype,": ",contrast)) +
+#       geom_point(aes(color = Legend)) +
+#       scale_color_manual(values = c("Downregulated" = "blue", "Not Significant" = "grey", "Upregulated" = "red"), drop = FALSE)+
+#       geom_hline(yintercept =-log10(max(tT2$PValue)),colour="black", linetype="dashed")+
+#       geom_text_repel(data = subset(tT2[1:30,]),
+#                       aes(label= gene_symbol),size = 4, box.padding = unit(0.35, "lines"),
+#                       point.padding = unit(0.3, "lines") ) +
+#       theme_bw(base_size = 18) + theme(legend.position = "bottom",
+#                                        legend.text = element_text(size = 14),
+#                                        legend.title = element_text(size = 16)) 
+#     
+#     listofvolcano[[contrast]] <- volcano
+#     
+#     ggsave(volcano, filename = file.path(diffexp.figures.dir, paste0(sampletype, "_", contrast, "_volcano.png")),
+#            width = 25, height = 25,
+#            units = "cm")
+#     
+#   } #close listofcontrasts loop
+#   
+#   return(listofresults <- list(tT = listoftT, tT2 = listoftT2, volcano = listofvolcano))
+#   
+# } #end diffexp edgeR function
+# 
+# 
+# # Run function on general COPD data
+# listofresults_brush_general <- diffexp_edgeR_func(disease_group = "general_copd", sampletype = "brush")
+# listofresults_biopt_general <- diffexp_edgeR_func(disease_group = "general_copd", sampletype = "biopt")
+# 
+# # Run function on severe COPD data
+# listofresults_brush_severe <- diffexp_edgeR_func(disease_group = "severe_copd", sampletype = "brush")
+# listofresults_biopt_severe <- diffexp_edgeR_func(disease_group = "severe_copd", sampletype = "biopt")
+# 
+# 
+# #Save all results (Made seperate directoriess for general COPD and severe COPD.) 
+# #listofresults contains the lists "brush" and "biopt", which then each contain lists "listoftT", "listoftT2" and "listofvolcano")
+# saveRDS(list(brush = listofresults_brush_general,
+#              biopt = listofresults_biopt_general), 
+#         file = file.path(diffexp.dir, "general_copd", "results", "listofresults.rds"))
+# 
+# saveRDS(list(brush = listofresults_brush_severe,
+#              biopt = listofresults_biopt_severe),
+#         file = file.path(diffexp.dir, "severe_copd", "results","listofresults.rds"))
+
+
 
 cat("END OF THIS JOB", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
 
-2 + a #end job here
+2 + a #make random error so job ends here
 # ================================================================================== #
 # 5. SAMPLE/PATIENT DEMOGRAPHICS TABLE ============================================
 # ================================================================================== #
@@ -987,14 +991,15 @@ write.csv(biopt_demographics, file.path(output.dir, "biopt_aatd_demographics.csv
 
         
 clinical_brush[which(clinical_brush$classification == "Severe COPD" & clinical_brush$serpina1_snp == "2"), c("Study.ID", "age", "sex")]        
-clinical_biopt[which(clinical_biopt$classification == "Severe COPD" & clinical_biopt$serpina1_snp == "2"), c("Study.ID", "age", "sex")]        
-
+clinical_biopt[which(clinical_biopt$classification == "Severe COPD" & clinical_biopt$serpina1_snp == "2"), c("Study.ID", "age", "sex")]
 
 
 # ================================================================================== #
 # 6. GSVA ==========================================================================
 # GSVA of ZZ signature on rest of data (to see if those genes go up in MZ at all)
 # ================================================================================== #
+library(GSVA)
+library(ggpubr)
 #DESEQ DIRECTORY
 diffexp.dir <- file.path(output.dir, "diffexp_serpina1_deseq")
 if(!exists(diffexp.dir))dir.create(diffexp.dir)
@@ -1004,100 +1009,118 @@ listofresults <- readRDS(file.path(diffexp.dir, "severe_copd", "results", "listo
 gsva.dir <- file.path(diffexp.dir, "gsva")
 if(!exists(gsva.dir)) dir.create(gsva.dir)
 
-
-counts_brush_voom <- voom(counts_brush)
-counts_biopt_voom <- voom(counts_biopt)
-
-
-mild_brush <- list(brush_contrast2_up,
-                   brush_contrast2_down)
-
-mild_biopt <- list(biopt_contrast2_up,
-                   biopt_contrast2_down)
+#Make dds objects and vst normalise the countss
 
 
 gsva_func <- function(sampletype){
   
   if(sampletype == "brush"){
-    counts_voom <- as.data.frame(counts_brush_voom$E)
-    gsva_res <- gsva(as.matrix(counts_voom), 
-                     mild_brush, 
-                     mx.diff = TRUE)
-  }
+    counts <- counts123_brush
+    clinical <- clinical_brush}
   
   if(sampletype == "biopt"){
-    gsva_counts_voom <- as.data.frame(counts_biopt_voom$E)
-    gsva_res <- gsva(as.matrix(gsva_counts_voom), mild_biopt, mx.diff = TRUE)
-  }
+    counts <- counts23_biopt
+    clinical <- clinical_biopt}
+  
+  #Remove samples with NA serpina1 snp data and change numbers to letters
+  clinical <- clinical[-which(is.na(clinical$serpina1_snp)),] %>% 
+    mutate(serpina1_snp = recode(
+      serpina1_snp,
+        "0" = "MM",
+        "1" = "MZ",
+        "2" = "ZZ" ))
+  
+  #make names valid
+  clinical$smoking_status<- make.names(clinical$smoking_status)
+  
+  #match counts to clinical
+  counts <- counts[,row.names(clinical)]
   
   
-  gsva_res=t(gsva_res) #the results tell us how much the set of genes was represented in each sample. ie. enrichment score of 0.9 is high- meaning the genes of interest showed up alot in sample X - now when we group the samples by copd and non copd, we can see whether certain genes are enriched in samples with or without copd
+  dds <- DESeqDataSetFromMatrix(countData = counts,
+                                colData = clinical,
+                                design = ~ 1) #no design needed, just need to make dds aobject so i can vst normalise
+  
+  counts_vst <- assay(vst(dds)) #assay extracts the counts
+  
+  # Get gene signature set
+  tT2 <- listofresults[[sampletype]][["tT2"]] #severe results
+  severe_ZZ_MM_tT2 <- tT2[["ZZ_MM"]]
+  severe_ZZ_MM_up <- row.names(severe_ZZ_MM_tT2)[which(severe_ZZ_MM_tT2$Legend == "Upregulated")]
+
+  gsva_res <- gsva(as.matrix(counts_vst), 
+                   list(severe_ZZ_MM_up), 
+                   mx.diff = TRUE)
+  gsva_res <- t(gsva_res) #the results tell us how much the set of genes was represented in each sample. ie. enrichment score of 0.9 is high- meaning the genes of interest showed up alot in sample X - now when we group the samples by copd and non copd, we can see whether certain genes are enriched in samples with or without copd
   
   
-  # COLNAMES FOR MILD_BRUSH
-  if(sampletype == "brush"){
-    colnames(gsva_res)= c("Brush_MildModerate.vs.Control_Up",
-                          "Brush_MildModerate.vs.Control_Down")
+
+    colnames(gsva_res) <- paste0(sampletype,"_ZZ_MM_Up")
+
     boxplot_gsva=cbind(gsva = gsva_res,
-                       disease= as.character(clinical_brush$classification))
-  }
-  
-  if(sampletype == "biopt"){
-    colnames(gsva_res)= c("Biopt_MildModerate.vs.Control_Up",
-                          "Biopt_MildModerate.vs.Control_Down")
-    boxplot_gsva=cbind(gsva = gsva_res,
-                       disease= as.character(clinical_biopt$classification))
-  }
-  
-  
-  
-  
+                       genotype= as.character(clinical$serpina1_snp))
+
   boxplot_gsva <- as.data.frame(boxplot_gsva)
   
   
-  my_comparisons <- list(c("Control", "Severe.COPD"),
-                         c("Control", "Mild.moderate.COPD"),
-                         c("Severe.COPD", "Mild.moderate.COPD"))
+  my_comparisons <- list(c("MM", "ZZ"),
+                         c("MM", "MZ"),
+                         c("ZZ", "MZ"))
   
   
   
-  for (i in 1:2){
+    x_order <- c("MM", "MZ", "ZZ")
+  #make this a loop if there are multiple gene set lists         y = as.numeric(boxplot_gsva[,i]),
     
-    x_order <- c('Control', 'Mild.moderate.COPD', 'Severe.COPD')
+    gsva_theme <- theme(axis.title = element_text(size = 24),
+                        axis.text = element_text(size = 24),
+                        title = element_text(size = 20),
+                        legend.position = "None")
     
     
-    boxplotfinal2 <- ggplot(boxplot_gsva, aes(
-      x = factor(disease, level = x_order),
-      y = as.numeric(boxplot_gsva[,i]),
-      fill = disease)) +
+    boxplot <- ggplot(boxplot_gsva, aes(
+      x = factor(genotype, levels = x_order),
+      y = as.numeric(boxplot_gsva[,1]),
+      fill = genotype)) +
       
       theme_bw()+
       
       gsva_theme +
       
-      geom_boxplot(position = position_dodge(1)) +
+      geom_boxplot(position = position_dodge(1),
+                   aes(alpha = 0.5)) +
       
       
+      geom_jitter(aes(color = genotype),
+                  alpha = 0.5,
+                  size = 2.5,
+                  width = 0.3) +
+      
+
       stat_compare_means(comparisons = my_comparisons,
                          method = "wilcox.test",
                          paired = FALSE,
                          size = 7)+
+
+      scale_fill_manual(values=c("MM" = "#00BA38" , "MZ" = "#619CFF",
+                                 "ZZ" = "#F8766D")) +
       
-      scale_fill_manual(values=c("Control" = "#00BA38" , "Mild.moderate.COPD" = "#619CFF",
-                                 "Severe.COPD" = "#F8766D")) +
+      
+      scale_color_manual(values=c("MM" = "#00BA38" , "MZ" = "#619CFF",
+                                 "ZZ" = "#F8766D")) +
       
       # scale_x_discrete(labels= c("Control" = "Control", "Mild.moderate.COPD" = "mCOPD", "Severe.COPD" = "sCOPD"))+
       scale_y_continuous(expand = c(0.07, 0, 0.07, 0)) +
       
-      labs(title = paste0("Signature Analysis", "(", colnames(boxplot_gsva)[i], ")")) +
+      labs(title = paste0("Signature Analysis", "(", paste0("SevereCOPD_",colnames(boxplot_gsva)), ")")) +
       ylab (label = "Enrichment Score") +
-      xlab (label = "Disease Severity (SHERLOCK3)")
+      xlab (label = "AATD Pi Genotype")
     
     
-    ggsave(boxplotfinal2, file = paste0(gsva.dir,"/",colnames(boxplot_gsva)[i], ".png"), width = 3000, height = 2100, units = "px" )
+    ggsave(boxplot, file = file.path(gsva.dir,paste0("SevereCOPD_",colnames(boxplot_gsva)[1], ".png")), width = 3000, height = 2100, units = "px" )
     
     
-  }
+
   
 } #close function
 
