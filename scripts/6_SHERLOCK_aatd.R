@@ -387,7 +387,129 @@ if(hpc_batch_job == FALSE){ #don't need this part for hpc
   intersect(row.names(serpina1_z_snp), raw_clinical$class_incl_study_id)
   ### --------------------------------------------------------------------------------------------------------------------------------------#
   
+
+
+
+
+# ================================================================================== #
+# 1A. SAMPLE/PATIENT DEMOGRAPHICS TABLE ============================================
+# ================================================================================== #
+
+
+demographics_func <- function(sampletype, disease_group){
+  
+  if(sampletype == "brush"){
+    clinical <- clinical_brush
+  }
+  
+  if(sampletype == "biopt"){
+    clinical <- clinical_biopt
+  }
+  
+  #Remove samples with NA serpina1 snp data
+  clinical <- clinical[-which(is.na(clinical$serpina1_snp)),]
+  
+  #make names valid
+  clinical$smoking_status<- make.names(clinical$smoking_status)
+  
+  if(disease_group == "mildmoderate_copd"){
+    clinical <- clinical[which(clinical$classification == "Mild-moderate COPD"),]}
+  
+  if(disease_group == "severe_copd"){
+    clinical <- clinical[which(clinical$classification == "Severe COPD"),]}
+  
+  
+  demographics <- t(
+    
+    clinical %>%   
+      
+      mutate(
+        serpina1_snp = recode(
+          serpina1_snp,
+          "0" = "MM",
+          "1" = "MZ",
+          "2" = "ZZ"
+        )
+      ) %>% 
+      
+      group_by(serpina1_snp) %>% 
+      
+      summarise(
+        total_patients = n(), #total patents per genotype group
+        
+        #sex
+        male_patients = sum(sex == "Male"), 
+        male_percentage = (male_patients / total_patients) * 100,
+        sex = paste0(male_patients, "(", round(male_percentage, digits=3), ")"),
+        
+        #age
+        mean_age = median(age),
+        range_age =paste0(min(age, na.rm = T), "-", max(age, na.rm = T)),
+        age = paste0(mean_age,"(",range_age, ")"),
+        
+        #Smoking status
+        currentsmoker = sum(smoking_status == "Current.smoker"),
+        smokerpercentage = currentsmoker/total_patients *100,
+        smoke = paste0(currentsmoker, "(", round(smokerpercentage, digits = 3), ")"),
+        
+        #packyears
+        median_packyears = median(packyears, na.rm = TRUE),
+        range_packyears = paste0(min(packyears, na.rm = T), "-", max(packyears, na.rm = T)),
+        packyears = paste0(median_packyears, "(", range_packyears, ")"),
+        
+        
+        #FEV1
+        median_FEV1_percent_pred =  median(FEV1_percent_pred, na.rm = T),
+        range_postfev1percpred = paste0(round(min(FEV1_percent_pred, na.rm = T),digits=3), "-", round(max(FEV1_percent_pred, na.rm = T), digits = 3)),
+        fev1 = paste0(round(median_FEV1_percent_pred, digits = 3), "(", range_postfev1percpred, ")"),
+        
+        #FEV/FVC
+        median_postfev1fvcpercpred =  median(FEV1_FVC_post, na.rm = TRUE),
+        range_postfev1fvcpercpred = paste0(round(min(FEV1_FVC_post, na.rm = T)), "-", round(max(FEV1_FVC_post, na.rm = T), digits = 3 )),
+        fev_fvc = paste0(round(median_postfev1fvcpercpred, digits = 3), "(", range_postfev1fvcpercpred, ")")
+        
+      ) %>%
+      
+      
+      dplyr::select(
+        serpina1_snp,
+        total_patients,
+        serpina1_snp,
+        sex,
+        age,
+        smoke,
+        packyears,
+        fev1,
+        fev_fvc
+      )
+  ) 
+  
+  colnames(demographics) <- demographics[1,]
+  
+  row.names(demographics) <- c(
+    "AATD Pi Genotype",
+    "Patients, n",
+    "Sex Male, n (%)",
+    "Age, median (Range)",
+    "Current smoker, n (%)",
+    "Packyears, median (Range)",
+    "FEV1 % pred. (post-bronchodilater), median (Range)",
+    "FEV1/FVC % (post-bronchodilater), median (Range)"
+  )
+  return(demographics)
+}
+
+#Bind together mild and severe and save
+brush_demographics <- cbind(demographics_func(sampletype = "brush", disease_group = "mildmoderate_copd"), 
+                            demographics_func(sampletype = "brush", disease_group = "severe_copd"))
+write.csv(brush_demographics, file.path(output.dir, "brush_aatd_demographics.csv"))
+
+biopt_demographics <- cbind(demographics_func(sampletype = "biopt", disease_group = "mildmoderate_copd"), 
+                            demographics_func(sampletype = "biopt", disease_group = "severe_copd"))
+write.csv(biopt_demographics, file.path(output.dir, "biopt_aatd_demographics.csv"))
+
 } #close the hpc_batch_job. script from here on will be run 
+
 
 # ================================================================================== #
 # 2. DIFFERENTIAL EXPRESSION =======================================================
@@ -533,7 +655,7 @@ diffexp_deseq_func <- function(sampletype, disease_group){
     # DGE
     dds <- DESeqDataSetFromMatrix(countData = counts,
                                   colData = clinical,
-                                  design = ~ 0 + serpina1_snp + age + sex + smoking_status)
+                                  design = ~ 0 + serpina1_snp + sex + age + smoking_status)
   }
   
   
@@ -546,7 +668,7 @@ diffexp_deseq_func <- function(sampletype, disease_group){
     # DGE
     dds <- DESeqDataSetFromMatrix(countData = counts,
                                   colData = clinical,
-                                  design = ~ 0 + serpina1_snp + age + sex + packyears) #no smokers in severe group
+                                  design = ~ 0 + serpina1_snp + sex + age) #no smokers in severe group
     
   }
   
@@ -642,7 +764,7 @@ diffexp_deseq_func <- function(sampletype, disease_group){
     
     listofvolcano[[contrast]] <- volcano
     
-    ggsave(volcano, filename = file.path(diffexp.figures.dir, paste0(sampletype, "_", contrast, "_111volcano.png")),
+    ggsave(volcano, filename = file.path(diffexp.figures.dir, paste0(sampletype, "_", contrast, "_volcano.png")),
            width = 25, height = 25,
            units = "cm")
     
@@ -867,146 +989,20 @@ saveRDS(list(brush = listofresults_brush_severe,
 #         file = file.path(diffexp.dir, "severe_copd", "results","listofresults.rds"))
 
 
-
-cat("END OF THIS JOB", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
-
-2 + a #make random error so job ends here
-# ================================================================================== #
-# 5. SAMPLE/PATIENT DEMOGRAPHICS TABLE ============================================
-# ================================================================================== #
-
-
-demographics_func <- function(sampletype, disease_group){
-  
-  if(sampletype == "brush"){
-    clinical <- clinical_brush
-  }
-  
-  if(sampletype == "biopt"){
-    clinical <- clinical_biopt
-  }
-  
-  #Remove samples with NA serpina1 snp data
-  clinical <- clinical[-which(is.na(clinical$serpina1_snp)),]
-
-  #make names valid
-  clinical$smoking_status<- make.names(clinical$smoking_status)
-  
-  if(disease_group == "mildmoderate_copd"){
-    clinical <- clinical[which(clinical$classification == "Mild-moderate COPD"),]}
-  
-  if(disease_group == "severe_copd"){
-    clinical <- clinical[which(clinical$classification == "Severe COPD"),]}
-  
-  
-  demographics <- t(
-    
-    clinical %>%   
-      
-      mutate(
-        serpina1_snp = recode(
-          serpina1_snp,
-          "0" = "MM",
-          "1" = "MZ",
-          "2" = "ZZ"
-        )
-      ) %>% 
-      
-      group_by(serpina1_snp) %>% 
-  
-      summarise(
-        total_patients = n(), #total patents per genotype group
-
-        #sex
-        male_patients = sum(sex == "Male"), 
-        male_percentage = (male_patients / total_patients) * 100,
-        sex = paste0(male_patients, "(", round(male_percentage, digits=3), ")"),
-        
-        #age
-        mean_age = median(age),
-        range_age =paste0(min(age, na.rm = T), "-", max(age, na.rm = T)),
-        age = paste0(mean_age,"(",range_age, ")"),
-        
-        #Smoking status
-        currentsmoker = sum(smoking_status == "Current.smoker"),
-        smokerpercentage = currentsmoker/total_patients *100,
-        smoke = paste0(currentsmoker, "(", round(smokerpercentage, digits = 3), ")"),
-        
-        #packyears
-        median_packyears = median(packyears, na.rm = TRUE),
-        range_packyears = paste0(min(packyears, na.rm = T), "-", max(packyears, na.rm = T)),
-        packyears = paste0(median_packyears, "(", range_packyears, ")"),
-        
-        
-        #FEV1
-        median_FEV1_percent_pred =  median(FEV1_percent_pred, na.rm = T),
-        range_postfev1percpred = paste0(round(min(FEV1_percent_pred, na.rm = T),digits=3), "-", round(max(FEV1_percent_pred, na.rm = T), digits = 3)),
-        fev1 = paste0(round(median_FEV1_percent_pred, digits = 3), "(", range_postfev1percpred, ")"),
-        
-        #FEV/FVC
-        median_postfev1fvcpercpred =  median(FEV1_FVC_post, na.rm = TRUE),
-        range_postfev1fvcpercpred = paste0(round(min(FEV1_FVC_post, na.rm = T)), "-", round(max(FEV1_FVC_post, na.rm = T), digits = 3 )),
-        fev_fvc = paste0(round(median_postfev1fvcpercpred, digits = 3), "(", range_postfev1fvcpercpred, ")")
-        
-        ) %>%
-  
-  
-  dplyr::select(
-    serpina1_snp,
-    total_patients,
-    serpina1_snp,
-    sex,
-    age,
-    smoke,
-    packyears,
-    fev1,
-    fev_fvc
-  )
-) 
-  
-  colnames(demographics) <- demographics[1,]
-
-  row.names(demographics) <- c(
-    "AATD Pi Genotype",
-    "Patients, n",
-    "Sex Male, n (%)",
-    "Age, median (Range)",
-    "Current smoker, n (%)",
-    "Packyears, median (Range)",
-    "FEV1 % pred. (post-bronchodilater), median (Range)",
-    "FEV1/FVC % (post-bronchodilater), median (Range)"
-  )
-  return(demographics)
-}
-
-#Bind together mild and severe and save
-brush_demographics <- cbind(demographics_func(sampletype = "brush", disease_group = "mildmoderate_copd"), 
-                            demographics_func(sampletype = "brush", disease_group = "severe_copd"))
-write.csv(brush_demographics, file.path(output.dir, "brush_aatd_demographics.csv"))
-
-biopt_demographics <- cbind(demographics_func(sampletype = "biopt", disease_group = "mildmoderate_copd"), 
-                            demographics_func(sampletype = "biopt", disease_group = "severe_copd"))
-write.csv(biopt_demographics, file.path(output.dir, "biopt_aatd_demographics.csv"))
-
-
-        
-clinical_brush[which(clinical_brush$classification == "Severe COPD" & clinical_brush$serpina1_snp == "2"), c("Study.ID", "age", "sex")]        
-clinical_biopt[which(clinical_biopt$classification == "Severe COPD" & clinical_biopt$serpina1_snp == "2"), c("Study.ID", "age", "sex")]
-
-
 # ================================================================================== #
 # 6. GSVA ==========================================================================
 # GSVA of ZZ signature on rest of data (to see if those genes go up in MZ at all)
 # ================================================================================== #
 library(GSVA)
 library(ggpubr)
+
 #DESEQ DIRECTORY
 diffexp.dir <- file.path(output.dir, "diffexp_serpina1_deseq")
 if(!exists(diffexp.dir))dir.create(diffexp.dir)
 
 listofresults <- readRDS(file.path(diffexp.dir, "severe_copd", "results", "listofresults.rds"))
 
-gsva.dir <- file.path(diffexp.dir, "gsva")
+gsva.dir <- file.path(diffexp.dir, "severe_copd", "gsva")
 if(!exists(gsva.dir)) dir.create(gsva.dir)
 
 #Make dds objects and vst normalise the countss
@@ -1032,6 +1028,8 @@ gsva_func <- function(sampletype){
   
   #make names valid
   clinical$smoking_status<- make.names(clinical$smoking_status)
+  
+  clinical <- clinical[which(clinical$classification == "Severe COPD"),]
   
   #match counts to clinical
   counts <- counts[,row.names(clinical)]
@@ -1117,7 +1115,7 @@ gsva_func <- function(sampletype){
       xlab (label = "AATD Pi Genotype")
     
     
-    ggsave(boxplot, file = file.path(gsva.dir,paste0("SevereCOPD_",colnames(boxplot_gsva)[1], ".png")), width = 3000, height = 2100, units = "px" )
+    ggsave(boxplot, file = file.path(gsva.dir,paste0("Severeonlypt_SevereCOPD_",colnames(boxplot_gsva)[1], ".png")), width = 3000, height = 2100, units = "px" )
     
     
 
@@ -1127,11 +1125,199 @@ gsva_func <- function(sampletype){
 gsva_func(sampletype = "brush")
 gsva_func(sampletype = "biopt")
 
+2 + a
 
 # ================================================================================== #
 # 7. BOXPLOTS ==========================================================================
 # ================================================================================== #
 
+
+boxplot_func <- function(disease_group){
+
+  #DESEQ DIRECTORY
+  diffexp.dir <- file.path(output.dir, "diffexp_serpina1_deseq")
+  diffexp.results.dir <- file.path(diffexp.dir, "results")
+  diffexp.figures.dir <- file.path(diffexp.dir, "figures")
+    
+  listofresults <- readRDS(file.path(diffexp.dir, "severe_copd", "results", "listofresults.rds"))
+  
+    
+  #Make dds objects and vst normalise the countss
+  
+ boxplot_func <- function(sampletype){
+    
+    if(sampletype == "brush"){
+      counts <- counts123_brush
+      clinical <- clinical_brush}
+    
+    if(sampletype == "biopt"){
+      counts <- counts23_biopt
+      clinical <- clinical_biopt}
+    
+    #Remove samples with NA serpina1 snp data and change numbers to letters
+    clinical <- clinical[-which(is.na(clinical$serpina1_snp)),] %>% 
+      mutate(serpina1_snp = recode(
+        serpina1_snp,
+        "0" = "MM",
+        "1" = "MZ",
+        "2" = "ZZ" ))
+    
+    #make names valid
+    clinical$smoking_status<- make.names(clinical$smoking_status)
+    
+    #match counts to clinical
+    counts <- counts[,row.names(clinical)]
+    
+    
+    dds <- DESeqDataSetFromMatrix(countData = counts,
+                                  colData = clinical,
+                                  design = ~ 1) #no design needed, just need to make dds aobject so i can vst normalise
+    
+    counts_vst <- assay(vst(dds)) #assay extracts the counts
+    
+    # Get top genes 
+    tT2 <- listofresults[[sampletype]][["tT2"]] #severe results
+
+  
+  boxplotdata <- as.data.frame(t(counts_vst))
+  
+  boxplot <- cbind(boxplotdata,
+                   genotype = clinical$serpina1_snp,
+                   exposure = clinical$exposure)
+  
+  tT2_genes<- row.names(listofresults[["tT2"]])
+  
+  top10 <- if (length(tT2_genes) >= 10) {
+    tT2_genes[1:10]
+  } else {
+    tT2_genes
+  }
+  
+  
+  
+  pdf(file = file.path(diffexp.figures.dir, paste0(microplastic,"_boxplot",".pdf")),
+      height = 8,
+      width= 6)
+  cat("Starting plots", microplastic, format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+  
+  
+  for (gene in c(top10)){
+    
+    gene_hgnc <- ifelse(is.na(hgnc_symbols_db[gene, "SYMBOL"]),
+                        gene,
+                        hgnc_symbols_db[gene, "SYMBOL"])
+    
+    
+    plot <- boxplot[,c(gene,
+                       "quantity",
+                       "exposure")]
+    
+    colnames(plot)[1] <- "gene"
+    
+    plot <- as.data.frame(plot)
+    
+    
+    ## Get P-Values --------------------------------------------------------------------------------------
+    
+    # THE TABLES IN STEP 1 AND 2 ARE TO GET X POSITIONS, THE T-TEST VALUES WILL NOT BE USED #
+    #### STEP 1) THIS IS  A TABLE OF THE COMPARISONS I ACTUALLY WANT --------------------------------------------------------------------------------------
+    stat.table <- plot %>%
+      t_test(gene ~ exposure)
+    
+    stat.table<- stat.table %>%
+      add_xy_position(x = "exposure", dodge = 0.8)
+    
+    # stat.table$contrast <- paste0(stat.table$group1, "-" ,stat.table$group2)
+    
+    
+    
+    #### STEP 2) MODIFY STAT TABLE TO INCLUDE COMPARISONS OF INTEREST --------------------------------------------------------------------------------------
+    stat.table3 <- stat.table
+    
+    
+    stat.table3[,"p"] <- listofresults[["tT"]][gene, "pvalue"]
+    stat.table3$p <- signif(as.numeric(stat.table3$p), digits = 4)
+    # stat.table3$y.position <- max(plot[,"gene"]) + 0.025*(max(plot[,"gene"]))
+    
+    logFC_res <- listofresults[["tT"]][gene, "log2FoldChange"]
+    pval_res <- listofresults[["tT"]][gene, "pvalue"]
+    
+    cat("   Making boxplot", microplastic, gene_hgnc, format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+    
+    boxplotimage <- ggplot(plot, aes(
+      x = as.factor(exposure),
+      y = gene
+      # fill = smokingstatus
+    )) +
+      theme_bw()+
+      
+      geom_boxplot(aes(color = exposure),position = position_dodge(1)) +
+      
+      geom_jitter(aes(color = exposure),
+                  alpha = 0.5,
+                  size = 2.5,
+                  width = 0.3) +
+      
+      labs(title = paste(gene_hgnc, "expression:", microplastic, "exposure" )) +
+      ylab (label =  paste(gene_hgnc, "expression")) +
+      xlab (label = paste(microplastic, "exposure")) +
+      
+      
+      
+      stat_pvalue_manual(stat.table3,
+                         label = "p",
+                         tip.length = 0.01,
+                         size = 3) 
+    
+    
+    
+    scatterplotimage <- ggplot(plot, aes(
+      x = quantity,
+      y = gene,
+      color = exposure
+    )) +
+      theme_bw()+
+      
+      
+      geom_point(aes(color = exposure)) +
+      
+      
+      labs(title = paste(gene_hgnc, "expression vs", microplastic, "quantity" )) +
+      ylab (label = paste(gene_hgnc, "expression")) +
+      xlab (label = paste("Quantity of", microplastic, "exposure")) +
+      
+      scale_x_continuous(labels = scales::label_number(accuracy = 0.01)) +
+      
+      annotate(
+        "text",
+        x = Inf,# adjust horizontally
+        y = -Inf,  # adjust vertically
+        hjust = 1.1,
+        vjust = -0.1,
+        label = paste0(
+          "High - Low exposure", "\n",
+          "logFC = ", signif(logFC_res, 3), "\n", 
+          "p = ", signif(pval_res, 3)),
+        size = 3
+      )
+    
+    image <- ggarrange(plotlist = list(boxplotimage,
+                                       scatterplotimage),
+                       nrow = 2,
+                       ncol = 1)
+    
+    print(image)
+    
+    
+  } #close loop of top10genes
+  dev.off()
+  
+} # close function
+
+
+boxplot_func(microplastic = "total_mp")
+boxplot_func(microplastic = "nylon")
+boxplot_func(microplastic = "polyu")
 
 
 
