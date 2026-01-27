@@ -387,27 +387,10 @@ if(hpc_batch_job == FALSE){ #don't need this part for hpc
   intersect(row.names(serpina1_z_snp), raw_clinical$class_incl_study_id)
   ### --------------------------------------------------------------------------------------------------------------------------------------#
   
-  library(ggvenn)
-  #---Venn diagram to compare biopt and brush#
-  x <- list(expression = clinical_sk_all$Study.ID, 
-            serpina1_z = serpina1_z_snp$Study.ID,
-            clinical = raw_clinical$class_incl_study_id)
-            
 
-  
-  vennplot = ggvenn(x, stroke_size = 1.5) + ggtitle("SHERLOCk Samples")
-  ggsave(
-    
-    filename = "SHERLOCK_samples_venn.png",
-    plot = vennplot,
-    width = 6,
-    height = 6,
-    dpi = 300
-  )
 
-  clinical_only <- setdiff(x$clinical, union(x$genotyping, x$expression))
-  serp_only     <- setdiff(x$genotyping, union(x$clinical, x$expression))
-  expression_only      <- setdiff(x$expression, union(x$clinical, x$genotyping))
+
+
 # ================================================================================== #
 # 1A. SAMPLE/PATIENT DEMOGRAPHICS TABLE ============================================
 # ================================================================================== #
@@ -613,7 +596,7 @@ table(clinical_biopt$classification, clinical_biopt$serpina1_snp)
 # Severe COPD (Subset for only Severe COPD. Compare the genotypes)
 # ================================================================================== #
 #DESEQ DIRECTORY
-diffexp.dir <- file.path(output.dir, "diffexp_serpina1_deseq")
+diffexp.dir <- file.path(output.dir, "diffexp_serpina1_deseq_withoutage")
 if(!exists(diffexp.dir))dir.create(diffexp.dir)
 
 
@@ -672,7 +655,7 @@ diffexp_deseq_func <- function(sampletype, disease_group){
     # DGE
     dds <- DESeqDataSetFromMatrix(countData = counts,
                                   colData = clinical,
-                                  design = ~ 0 + serpina1_snp + sex + age + smoking_status)
+                                  design = ~ 0 + serpina1_snp + sex + smoking_status)
   }
   
   
@@ -685,7 +668,7 @@ diffexp_deseq_func <- function(sampletype, disease_group){
     # DGE
     dds <- DESeqDataSetFromMatrix(countData = counts,
                                   colData = clinical,
-                                  design = ~ 0 + serpina1_snp + sex + age) #no smokers in severe group
+                                  design = ~ 0 + serpina1_snp + sex ) #no smokers in severe group
     
   }
   
@@ -1005,7 +988,6 @@ saveRDS(list(brush = listofresults_brush_severe,
 #              biopt = listofresults_biopt_severe),
 #         file = file.path(diffexp.dir, "severe_copd", "results","listofresults.rds"))
 
-
 } #close the hpc_batch_job. script from here on will be run 
 
 
@@ -1070,20 +1052,20 @@ counts23_biopt <- counts23_biopt[,row.names(clinical_biopt)]
 # ================================================================================== #
 library(GSVA)
 library(ggpubr)
-
 #DESEQ DIRECTORY
-diffexp.dir <- file.path(output.dir, "diffexp_serpina1_deseq")
+diffexp.dir <- file.path(output.dir, "diffexp_serpina1_deseq_withoutage")
 if(!exists(diffexp.dir))dir.create(diffexp.dir)
 
 listofresults <- readRDS(file.path(diffexp.dir, "severe_copd", "results", "listofresults.rds"))
 
-gsva.dir <- file.path(diffexp.dir, "severe_copd", "gsva")
-if(!exists(gsva.dir)) dir.create(gsva.dir)
-
 #Make dds objects and vst normalise the countss
 
+#Run GSVA of gene signature that was upregulated in ZZ (compared to MM) in Severe COPD on
+#  i) Severe COPD patients
+# ii) General COPD (Severe COPD and Mild COPD combined)
 
 gsva_func <- function(sampletype, disease_group){
+  
   
   if(sampletype == "brush"){
     counts <- counts123_brush
@@ -1110,8 +1092,9 @@ gsva_func <- function(sampletype, disease_group){
   gsva.dir <- file.path(diffexp.figures.dir, "gsva")
   if(!exists(gsva.dir))dir.create(gsva.dir)
   
-
   
+
+
   #Remove samples with NA serpina1 snp data and change numbers to letters
   clinical <- clinical[-which(is.na(clinical$serpina1_snp)),] %>% 
     mutate(serpina1_snp = recode(
@@ -1122,8 +1105,6 @@ gsva_func <- function(sampletype, disease_group){
   
   #make names valid
   clinical$smoking_status<- make.names(clinical$smoking_status)
-  
-  clinical <- clinical[which(clinical$classification == "Severe COPD"),]
   
   #match counts to clinical
   counts <- counts[,row.names(clinical)]
@@ -1152,7 +1133,6 @@ gsva_func <- function(sampletype, disease_group){
     boxplot_gsva=cbind(gsva = gsva_res,
                        genotype= as.character(clinical$serpina1_snp),
                        disease = as.character(clinical$classification))
-    
 
   boxplot_gsva <- as.data.frame(boxplot_gsva)
   
@@ -1200,38 +1180,37 @@ gsva_func <- function(sampletype, disease_group){
                                  "ZZ" = "#F8766D")) +
       
       
-      
       scale_color_manual(values=c("Mild-moderate COPD" = "#E68613" , 
                                   "Severe COPD" = "#C77CFF")) +
       
-      
       # scale_x_discrete(labels= c("Control" = "Control", "Mild.moderate.COPD" = "mCOPD", "Severe.COPD" = "sCOPD"))+
       scale_y_continuous(expand = c(0.07, 0, 0.07, 0)) +
-      
-      guides(
+     
+       guides(
         fill  = "none",
         alpha = "none"
       ) +
-      
       
       labs(title = paste0("Signature Analysis", "(", paste0("SevereCOPD_",colnames(boxplot_gsva)), ")")) +
       ylab (label = "Enrichment Score") +
       xlab (label = "AATD Pi Genotype")
     
     
-    ggsave(boxplot, file = file.path(gsva.dir,paste0("Severeonlypt_SevereCOPD_",colnames(boxplot_gsva)[1], ".png")), width = 3000, height = 2100, units = "px" )
+    ggsave(boxplot, file = file.path(gsva.dir,paste0("SevereSig_",colnames(boxplot_gsva)[1], "_", disease_group,"data", ".png")), width = 3000, height = 2100, units = "px" )
     
     
 
   
 } #close function
 
-  gsva_func(sampletype = "brush", disease_group = "severe_copd")
-  gsva_func(sampletype = "biopt", disease_group = "severe_copd")
-  
-  gsva_func(sampletype = "brush", disease_group =  "general_copd")
-  gsva_func(sampletype = "biopt", disease_group =  "general_copd")
-  
+
+gsva_func(sampletype = "brush", disease_group = "severe_copd")
+gsva_func(sampletype = "biopt", disease_group = "severe_copd")
+
+gsva_func(sampletype = "brush", disease_group =  "general_copd")
+gsva_func(sampletype = "biopt", disease_group =  "general_copd")
+
+
 
 # ================================================================================== #
 # 7. BOXPLOTS ==========================================================================
@@ -1239,76 +1218,72 @@ gsva_func <- function(sampletype, disease_group){
 
 
 
-  #DESEQ DIRECTORY
-  diffexp.dir <- file.path(output.dir, "diffexp_serpina1_deseq")
+#DESEQ DIRECTORY
+diffexp.dir <- file.path(output.dir, "diffexp_serpina1_deseq_withoutage")
 
-    
-  #Make dds objects and vst normalise the countss
+
+#Make dds objects and vst normalise the countss
+
+boxplot_func <- function(sampletype, disease_group){
   
- boxplot_func <- function(sampletype, disease_group){
-    
-   listofresults <- readRDS(file.path(diffexp.dir, disease_group, "results", "listofresults.rds"))
-   
-   
-   if(sampletype == "brush"){
-     counts <- counts123_brush
-     clinical <- clinical_brush}
-   
-   if(sampletype == "biopt"){
-     counts <- counts23_biopt
-     clinical <- clinical_biopt}
-   
-   
-   if(disease_group == "general_copd"){
-     #Only include COPD samples
-     clinical <- clinical[-which(clinical$classification == "Control"),]
-     this.diffexp.dir <- file.path(diffexp.dir, "general_copd")}
-   
-   
-   if(disease_group == "severe_copd"){
-     #Only include COPD samples
-     clinical <- clinical[which(clinical$classification == "Severe COPD"),]
-     this.diffexp.dir <- file.path(diffexp.dir, "severe_copd")}
-   
-
-   diffexp.figures.dir <- file.path(this.diffexp.dir, "figures")
-   boxplot.dir <- file.path(diffexp.figures.dir, "boxplot")
-   if(!exists(boxplot.dir))dir.create(boxplot.dir)
-    
-    #Remove samples with NA serpina1 snp data and change numbers to letters
-    clinical <- clinical[-which(is.na(clinical$serpina1_snp)),] %>% 
-      mutate(serpina1_snp = recode(
-        serpina1_snp,
-        "0" = "MM",
-        "1" = "MZ",
-        "2" = "ZZ" ))
-    
-    #make names valid
-    clinical$smoking_status<- make.names(clinical$smoking_status)
-    
-    #match counts to clinical
-    counts <- counts[,row.names(clinical)]
-    
-    
-    dds <- DESeqDataSetFromMatrix(countData = counts,
-                                  colData = clinical,
-                                  design = ~ 1) #no design needed, just need to make dds aobject so i can vst normalise
-    
-    counts_vst <- assay(vst(dds)) #assay extracts the counts
-    
-    # Get top genes 
-    tT2 <- listofresults[[sampletype]][["tT2"]][["ZZ_MM"]] #severe or general results depending on function selection
-
+  listofresults <- readRDS(file.path(diffexp.dir, disease_group, "results", "listofresults.rds"))
+  
+  
+  if(sampletype == "brush"){
+    counts <- counts123_brush
+    clinical <- clinical_brush}
+  
+  if(sampletype == "biopt"){
+    counts <- counts23_biopt
+    clinical <- clinical_biopt}
+  
+  
+  if(disease_group == "general_copd"){
+    #Only include COPD samples
+    clinical <- clinical[-which(clinical$classification == "Control"),]
+    this.diffexp.dir <- file.path(diffexp.dir, "general_copd")}
+  
+  
+  if(disease_group == "severe_copd"){
+    #Only include COPD samples
+    clinical <- clinical[which(clinical$classification == "Severe COPD"),]
+    this.diffexp.dir <- file.path(diffexp.dir, "severe_copd")}
+  
+  
+  diffexp.figures.dir <- file.path(this.diffexp.dir, "figures")
+  boxplot.dir <- file.path(diffexp.figures.dir, "boxplot")
+  if(!exists(boxplot.dir))dir.create(boxplot.dir)
+  
+  #Remove samples with NA serpina1 snp data and change numbers to letters
+  clinical <- clinical[-which(is.na(clinical$serpina1_snp)),] %>% 
+    mutate(serpina1_snp = recode(
+      serpina1_snp,
+      "0" = "MM",
+      "1" = "MZ",
+      "2" = "ZZ" ))
+  
+  #make names valid
+  clinical$smoking_status<- make.names(clinical$smoking_status)
+  
+  #match counts to clinical
+  counts <- counts[,row.names(clinical)]
+  
+  
+  dds <- DESeqDataSetFromMatrix(countData = counts,
+                                colData = clinical,
+                                design = ~ 1) #no design needed, just need to make dds aobject so i can vst normalise
+  
+  counts_vst <- assay(vst(dds)) #assay extracts the counts
+  
+  # Get top genes 
+  tT2 <- listofresults[[sampletype]][["tT2"]][["ZZ_MM"]] #severe or general results depending on function selection
+  
   
   boxplotdata <- as.data.frame(t(counts_vst))
   
   boxplot <- cbind(boxplotdata,
                    genotype = clinical$serpina1_snp,
-                   disease = clinical$classification,
-                   age = clinical$age,
-                   smoking_status = clinical$smoking_status,
-                   packyears = clinical$packyears,
-                   ics = clinical$ics_use)
+                   disease = clinical$classification)
   
   tT2_genes<- row.names(tT2)
   
@@ -1320,12 +1295,12 @@ gsva_func <- function(sampletype, disease_group){
   
   
   
-  
-  
   pdf(file = file.path(boxplot.dir, paste0(disease_group,"_",sampletype, "_boxplot",".pdf")),
       height = 8,
       width= 6)
+  
   cat("Starting plots", disease_group, sampletype, format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+  
   
   
   for (gene in c(top10)){
@@ -1337,18 +1312,12 @@ gsva_func <- function(sampletype, disease_group){
     
     plot <- boxplot[,c(gene,
                        "genotype",
-                       "disease",
-                       "age",
-                       "packyears",
-                       "ics")]
-    
-    plot$Study.ID <- row.names(plot)
+                       "disease")]
     
     colnames(plot)[1] <- "gene"
     
     plot <- as.data.frame(plot)
     
-    # write.csv(plot, "JUN_biopt_sever.csv")
     
     ## Get P-Values --------------------------------------------------------------------------------------
     
@@ -1367,7 +1336,7 @@ gsva_func <- function(sampletype, disease_group){
     #### STEP 2) MODIFY STAT TABLE TO INCLUDE COMPARISONS OF INTEREST --------------------------------------------------------------------------------------
     stat.table3 <- stat.table
     
-
+    
     stat.table3 <- cbind(stat.table3, resultsname = c("MZ_MM", "ZZ_MM", "ZZ_MZ"))
     stat.table3[which(stat.table3$resultsname == "MZ_MM"),"p"] <- listofresults[[sampletype]][["tT"]][["MZ_MM"]][gene, "pvalue"]
     stat.table3[which(stat.table3$resultsname == "ZZ_MM"),"p"] <- listofresults[[sampletype]][["tT"]][["ZZ_MM"]][gene, "pvalue"]
@@ -1392,6 +1361,12 @@ gsva_func <- function(sampletype, disease_group){
                   alpha = 0.5,
                   size = 2.5,
                   width = 0.3) +
+      
+      geom_text_repel(
+        aes(label = Study.ID, color = disease),
+        size = 4,
+        show.legend = FALSE
+      ) + 
       
       scale_fill_manual(values=c("MM" = "#00BA38" , "MZ" = "#619CFF",
                                  "ZZ" = "#F8766D")) +
@@ -1427,16 +1402,14 @@ gsva_func <- function(sampletype, disease_group){
         width= 20,
         units = "cm",
         res = 800)
-dev.off()
-   
-    
+    dev.off()
     
     
     boxplotimage_labelled <- boxplotimage +
       geom_text_repel(
-      aes(label = Study.ID, color = disease),
-      size = 4,
-      show.legend = FALSE) 
+        aes(label = Study.ID, color = disease),
+        size = 4,
+        show.legend = FALSE) 
     
     
     
@@ -1449,17 +1422,19 @@ dev.off()
     
     
   } #close loop of top10genes
-
+  
   dev.off()
 } # close function
 
- 
- boxplot_func(sampletype = "brush", disease_group = "severe_copd")
- boxplot_func(sampletype = "biopt", disease_group = "severe_copd")
- 
- boxplot_func(sampletype = "brush", disease_group =  "general_copd")
- boxplot_func(sampletype = "biopt", disease_group =  "general_copd")
+  
 
 
- cat("END OF THIS JOB", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
- 
+boxplot_func(sampletype = "brush", disease_group = "severe_copd")
+boxplot_func(sampletype = "biopt", disease_group = "severe_copd")
+
+boxplot_func(sampletype = "brush", disease_group =  "general_copd")
+boxplot_func(sampletype = "biopt", disease_group =  "general_copd")
+
+
+cat("END OF THIS JOB", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+
