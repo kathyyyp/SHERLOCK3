@@ -262,7 +262,7 @@ diffexp_deseq <- function(microplastic) {
 ##### Q1a DGE #####
 dds <- DESeqDataSetFromMatrix(countData = counts,
                               colData = clinical,
-                              design = ~ 0 + exposure + age + sex + smoking_status)
+                              design = ~ 0 + exposure + age + sex + smoking_status) #note the order of the variables here doesn't matter. exposure at the end would be the same
 
 # Filter the genes that are lowly expressed and normalize
 # Low exp genes affects statistics - can make p value very significant even if only a few samples are lowly expressed amongst other samples with no expression.  also affects multiple testing.
