@@ -1,16 +1,25 @@
 #Microplastics differential expression
 #use robust= TRUE 
 #DESeq2 better for reducing false positives (more conservative)
-#can i even correct for sex if theres only one female and two males in the highpolyure group 
+#can i even correct for sex if theres only one female and two males in the highpolyure group ?
 
 
 # Project with Daan & Barbro Melgert measuring the levels of specific microplastic particles in bronchial wash samples of the Sherlock study.
 # Aim: see if their results are correlated with specific gene expression signals (differential gene expression analyses with the RNA-seq data from the bronchial brushes)
 
-#In the attached file you will find the SEO numbers of the subjects in which microplastics were measured and the results of the microplastics measurements.
-#Here you will find 3 tables with subjects listed in green and subjects listed in orange, can you perform a differential gene expression analysis between the green and orange subjects (3 different analyses for the 3 different tables).
-#I know the power will probably be too low to generate genome-wide significant hits, but we would still like to see the table with the results. Could you send the excel file with results for all genes?
-  
+# November 2025 
+# "In the attached file you will find the SEO numbers of the subjects in which microplastics were measured and the results of the microplastics measurements.
+# Here you will find 3 tables with subjects listed in green and subjects listed in orange, can you perform a differential gene expression analysis between the green and orange subjects (3 different analyses for the 3 different tables).
+# I know the power will probably be too low to generate genome-wide significant hits, but we would still like to see the table with the results.
+# Could you send the excel file with results for all genes?"
+
+
+# 03/02/2026
+# Daan sent 260124 Summary results and plan correlation with RNAseq signatures PyGCMS
+# "we just received new microplastic data. These were generated using a different method to quantify microplastics.
+# Kathy, would you be able to also run the same analyses with these microplastic data (See attached).
+# It will be interesting to see if we get similar or very different results."
+
 
 
 options(error = function() { traceback(2); quit(status = 1) })
@@ -56,179 +65,40 @@ if(!exists(mp.dir)) dir.create(mp.dir)
 # ================================================================================== #
 # 1. LOAD IN DATA ==================================================================
 # ================================================================================== #
-setwd(file.path(data.dir, "raw", "microplastics"))
+clinical123_master <- readRDS(file.path(postQC.data.dir,  "master","clinical_sherlock123_master.rds"))
+clinical_brush <- clinical123_master[which(clinical123_master$sampletype == "Brush" & clinical123_master$batch != "1"),] 
 
-total_mp <- as.data.frame(read_xlsx("microplastics_patients.xlsx", sheet = "total_microplastics")) %>%  column_to_rownames(var = "Number")
-nylon <- as.data.frame(read_xlsx("microplastics_patients.xlsx", sheet = "nylon"))  %>%  column_to_rownames(var = "Number")
-polyu <- as.data.frame(read_xlsx("microplastics_patients.xlsx", sheet = "polyurethane"))  %>%  column_to_rownames(var = "Number")
-  
-setwd(file.path(main.dir))
-
-clinical_brush <- readRDS(file.path(postQC.data.dir, "clinical_brush_simple.rds"))
 counts_brush <- readRDS(file.path(combat.processed.data.dir, "counts_brush_combat.rds"))
+counts_biopt <- readRDS(file.path(combat.processed.data.dir, "counts_biopt_combat.rds"))
+
 hgnc_symbols_db <- readRDS(file.path(postQC.data.dir,"hgnc_symbols_db.rds"))
 
 
-#Match up patients
-#SEO250, SEO131 and SEO304 only have biopsy sample, not brush
+setwd(file.path(data.dir, "raw", "microplastics"))
 
-matching_patients <- intersect(row.names(total_mp),clinical_brush$Study.ID)
-clinical_total_mp <- clinical_brush[match(matching_patients,clinical_brush$Study.ID),] %>% 
-  mutate(quantity = total_mp[matching_patients,'Total nr. of microplastics']) %>% 
-  mutate(exposure = ifelse(quantity < 8.45, "low", "high"))
-
-matching_patients <- intersect(row.names(nylon),clinical_brush$Study.ID)
-clinical_nylon <- clinical_brush[match(matching_patients,clinical_brush$Study.ID),] %>% 
-mutate(quantity = nylon[matching_patients,'Nylon']) %>% 
-  mutate(exposure = ifelse(quantity < 22.88, "low", "high"))
-
-matching_patients <- intersect(row.names(polyu),clinical_brush$Study.ID)
-clinical_polyu <- clinical_brush[match(matching_patients,clinical_brush$Study.ID),] %>% 
-  mutate(quantity = polyu[matching_patients,'Polyurethane']) %>% 
-  mutate(exposure = ifelse(quantity < 67.44, "low", "high"))
+# Batch 1 data (November 2025)
+total_mp1 <- as.data.frame(read_xlsx("microplastics_patients.xlsx", sheet = "total_microplastics")) %>%  column_to_rownames(var = "Number")
+nylon1 <- as.data.frame(read_xlsx("microplastics_patients.xlsx", sheet = "nylon"))  %>%  column_to_rownames(var = "Number")
+poly1 <- as.data.frame(read_xlsx("microplastics_patients.xlsx", sheet = "polyurethane"))  %>%  column_to_rownames(var = "Number")
+  
+# Batch 2 data (03/02/36)
+total_mp2 <- as.data.frame(read_xlsx("260124 Summary results and plan correlation with RNAseq signatures PyGCMS.xlsx", sheet = "Total")) %>%  column_to_rownames(var = "Number")
+nylon2 <- as.data.frame(read_xlsx("260124 Summary results and plan correlation with RNAseq signatures PyGCMS.xlsx", sheet = "Nylon"))  %>%  column_to_rownames(var = "Number")
+poly2 <- as.data.frame(read_xlsx("260124 Summary results and plan correlation with RNAseq signatures PyGCMS.xlsx", sheet = "Polypropylene"))  %>%  column_to_rownames(var = "Number")
+  
+setwd(file.path(main.dir))
 
 
 
-diffexp_edgeR <- function(microplastic) {
+# ================================================================================== #
+# 2.2. Diff Exp(define function) ==================================================
+# ================================================================================== #
 
-  
-  #Make output directory for total_mp or nylon or polyu
-  this.mp.dir <- file.path(mp.dir, microplastic)
-  if(!exists(this.mp.dir)) dir.create(this.mp.dir, recursive = TRUE)
-  
-  diffexp.dir <- file.path(this.mp.dir, "diffexp")
-  if(!exists(diffexp.dir)) dir.create(diffexp.dir, recursive = TRUE)
+#### Define DESEQ2 function ####
+diffexp_deseq_func <- function(microplastic) {
   
   
-  #Set results paths
-  diffexp.results.dir <- file.path(diffexp.dir, "results")
-  if(!exists(diffexp.results.dir)) dir.create(diffexp.results.dir, recursive = TRUE)
-  
-  
-  diffexp.figures.dir <- file.path(diffexp.dir, "figures")
-  if(!exists(diffexp.figures.dir)) dir.create(diffexp.figures.dir, recursive = TRUE)
-  
-  
-
-  if(microplastic == "total_mp"){
-  clinical <- clinical_total_mp}
-  
-  if(microplastic == "nylon"){
-  clinical <- clinical_nylon}
-  
-  
-  if(microplastic == "polyu"){
-  clinical <- clinical_polyu}
-  
-  
-  counts <- counts_brush[,row.names(clinical)]
-  
-
-
-  design <- model.matrix(~ 0 + exposure + age + sex + smoking_status, 
-                          data = clinical) #Design matrix
-  
-  colnames(design)[1:2] <- c(levels(as.factor(clinical$exposure)))
-  
-  DGEL<- DGEList(counts=counts) 
-  
-  # FILTER
-  keep <- filterByExpr(DGEL, group = clinical$classification) 
-  # The filterBy Expr function keeps rows that have worthwhile counts in a minimum number of samples.
-  # keep <- which(rowMedians(as.matrix(DGEL))>10) 
-  # keep <- rowSums(cpm(expression)>100) >= 2
-  
-  
-  DGEL<-DGEL[keep, , keep.lib.sizes=FALSE] # When you subset a DGEList and specify keep.lib.sizes=FALSE, the lib.size for each sample will be recalculated to be the sum of the counts left in the rows of the experiment for each sample.
-  # expression <- DGEL$counts
-  
-  # NORMALISE
-  DGEL<- calcNormFactors(DGEL,method = "TMM")
-  
-  # ESTIMATE DISPERSON
-  DGEL <- estimateDisp(DGEL, design)
-  
-  # FIT MODEL
-  fit <- glmQLFit(DGEL, design, robust = TRUE) #fit the GLM (design) to the DGEL(the DGEL object, which contains the counts data that has been filtered,normalised and dispersons estimtated)
-  
-  my.contrasts <- makeContrasts(contrast1 = high - low,
-                                levels = design)
-  
-  qlf <- glmQLFTest(fit, contrast=my.contrasts[,1], robust)
-  
-  tT <- topTags(qlf,n=nrow(DGEL))$table #topTags gets top genes, here we want all of the genes, edgeR's default p.adjust method is BH
-  tT$Legend <- ifelse(
-    tT$FDR < 0.05 & tT$logFC > 0, "Upregulated",
-    ifelse(
-      tT$FDR < 0.05 & tT$logFC < 0, "Downregulated",
-      "Not Significant"))
-  
-  tT$Legend[is.na(tT$Legend)]="Not Significant"
-  
-  tT$Legend <- factor(tT$Legend, levels = c("Downregulated", "Upregulated", "Not Significant"))
-  
-  tT$gene_symbol=hgnc_symbols_db[row.names(tT), "SYMBOL"] #add hgnc symbols
-  
-  # if(showEnsemblID == TRUE){
-    #for those with no hgnc symbol, label with ensembl id
-    tT[which(is.na(tT$gene_symbol)), "gene_symbol"] <- row.names(tT)[(which(is.na(tT$gene_symbol)))] #listofresults_withensembl
-  # }
-  # 
-  # else{
-  #   #for those with no hgnc symbol, remove
-  #   tT <- tT[-which(is.na(tT$gene_symbol)), ] #listofresults_hgnconly
-  # }
-  
-  selection <-which(tT$FDR<0.05)
-  
-  tT2 <- tT[selection,]
-  
-  write.csv(tT, file = paste0(diffexp.results.dir, "tT_", microplastic, ".csv"))
-  write.csv(head(tT, n = 100) , file = paste0(diffexp.results.dir, "tT_top100_", microplastic, ".csv"))
-  
-  
-  # ================================================================================== #
-  # 2.1. VOLCANO PLOT ================================================================
-  # ================================================================================== #
-  cat(paste("Starting 2.1. VOLCANO PLOT", microplastic), format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
-  
-  volcano <- ggplot(tT, aes(x = logFC, y = -log10(PValue))) +
-    ggtitle(paste(microplastic)) +
-    geom_point(aes(color = Legend)) +
-    scale_color_manual(values = c("Downregulated" = "blue", "Not Significant" = "grey", "Upregulated" = "red"), drop = FALSE)+
-    geom_hline(yintercept =-log10(max(tT2$PValue)),colour="black", linetype="dashed")+
-    geom_text_repel(data = subset(tT2[1:30,]),
-                    aes(label= gene_symbol),size = 4, box.padding = unit(0.35, "lines"),
-                    point.padding = unit(0.3, "lines") ) +
-    theme_bw(base_size = 18) + theme(legend.position = "bottom",
-                                     legend.text = element_text(size = 14),
-                                     legend.title = element_text(size = 16)) 
-  
-  ggsave(volcano, filename = file.path(diffexp.figures.dir, paste0(microplastic,"_volcano_plot.png")),
-         width = 25, height = 25,
-         units = "cm")
-  
-  
-  listofresults <- list(tT = tT, tT2 = tT2, volcano = volcano)
-  #Save all results
-  saveRDS(listofresults, file = file.path(diffexp.results.dir, "listofresults.RDS"))
-  
-
-} #close function
-
-
-diffexp_edgeR(microplastic = "total_mp")
-diffexp_edgeR(microplastic = "nylon")
-diffexp_edgeR(microplastic = "polyu")
-
-
-#### DESEQ2####
-
-
-diffexp_deseq <- function(microplastic) {
-  
-  
-  #Make output directory for total_mp or nylon or polyu
+  #Make output directory for total_mp or nylon or poly
   this.mp.dir <- file.path(mp.dir, microplastic)
   if(!exists(this.mp.dir)) dir.create(this.mp.dir, recursive = TRUE)
   
@@ -244,26 +114,82 @@ diffexp_deseq <- function(microplastic) {
   diffexp.figures.dir <- file.path(diffexp.dir, "figures")
   if(!exists(diffexp.figures.dir)) dir.create(diffexp.figures.dir, recursive = TRUE)
   
+  if(batch == 1){ #batch is the index in loop after deseq and boxplot function
+    total_mp <- total_mp1
+    nylon <- nylon1
+    poly <- poly1
+    
+    #Match up patients
+    #SEO250, SEO131 and SEO304 only have biopsy sample, not brush
+    
+    if(microplastic == "total_mp"){
+    matching_patients <- intersect(row.names(total_mp),clinical_brush$Study.ID)
+    clinical <- clinical_brush[match(matching_patients,clinical_brush$Study.ID),] %>% 
+      mutate(quantity = total_mp[matching_patients,'Total nr. of microplastics']) %>% 
+      mutate(exposure = ifelse(quantity < 8.45, "low", "high"))}
+    
+    if(microplastic == "nylon"){
+    matching_patients <- intersect(row.names(nylon),clinical_brush$Study.ID)
+    clinical <- clinical_brush[match(matching_patients,clinical_brush$Study.ID),] %>% 
+      mutate(quantity = nylon[matching_patients,'Nylon']) %>% 
+      mutate(exposure = ifelse(quantity < 22.88, "low", "high"))}
+    
+    if(microplastic == "poly"){
+    matching_patients <- intersect(row.names(poly),clinical_brush$Study.ID)
+    clinical <- clinical_brush[match(matching_patients,clinical_brush$Study.ID),] %>% 
+      mutate(quantity = poly[matching_patients,'Polyurethane']) %>% 
+      mutate(exposure = ifelse(quantity < 67.44, "low", "high"))}
+    
+  }
   
   
-  if(microplastic == "total_mp"){
-    clinical <- clinical_total_mp}
-  
-  if(microplastic == "nylon"){
-    clinical <- clinical_nylon}
-  
-  
-  if(microplastic == "polyu"){
-    clinical <- clinical_polyu}
-  
+  if(batch == 2){
+    total_mp <- total_mp2
+    nylon <- nylon2
+    poly <- poly2
+    
+    
+    #Match up patients
+    if(microplastic == "total_mp"){
+      
+      #SEO532 - no expression data
+      matching_patients <- intersect(row.names(total_mp),clinical_brush$Study.ID)
+      clinical <- clinical_brush[match(matching_patients,clinical_brush$Study.ID),] %>% 
+        mutate(quantity = total_mp[matching_patients,'Total ng/ml of microplastics']) %>% 
+        mutate(exposure = total_mp[matching_patients,'Category'])}
+    
+    if(microplastic == "nylon"){
+      
+      matching_patients <- intersect(row.names(nylon),clinical_brush$Study.ID)
+      clinical <- clinical_brush[match(matching_patients,clinical_brush$Study.ID),] %>% 
+        mutate(quantity = nylon[matching_patients,'Nylon ng/ml']) %>% 
+        mutate(exposure = nylon[matching_patients,'Category'])}
+    
+    
+    if(microplastic == "poly"){
+      matching_patients <- intersect(row.names(poly),clinical_brush$Study.ID)
+      clinical <- clinical_brush[match(matching_patients,clinical_brush$Study.ID),] %>% 
+        mutate(quantity = poly[matching_patients,'Polypropylene ng/ml']) %>% 
+        mutate(exposure = poly[matching_patients,'Category'])}
+    
+    clinical$exposure <- tolower(clinical$exposure) #make lowercase to match batch 1
+  }
   
   counts <- counts_brush[,row.names(clinical)]
   
 ##### Q1a DGE #####
-dds <- DESeqDataSetFromMatrix(countData = counts,
+  
+if(batch == 2 && microplastic == nylon){
+  
+  dds <- DESeqDataSetFromMatrix(countData = counts,
+                                colData = clinical,
+                                design = ~ 0 + exposure + age + smoking_status) # all are males, no sex correction
+  } else{
+
+    dds <- DESeqDataSetFromMatrix(countData = counts,
                               colData = clinical,
                               design = ~ 0 + exposure + age + sex + smoking_status) #note the order of the variables here doesn't matter. exposure at the end would be the same
-
+}
 # Filter the genes that are lowly expressed and normalize
 # Low exp genes affects statistics - can make p value very significant even if only a few samples are lowly expressed amongst other samples with no expression.  also affects multiple testing.
 # One method = keep row medians that are greater than 10 (ie. half of the samples for a gene must have a minimum number of 10 counts)
@@ -313,17 +239,28 @@ selection <-which(tT$padj<0.05)
 
 tT2 <- tT[selection,]
 
-write.csv(tT, file = paste0(diffexp.results.dir, "tT_", microplastic, ".csv"))
-write.csv(head(tT, n = 100) , file = paste0(diffexp.results.dir, "tT_top100_", microplastic, ".csv"))
+write.csv(tT, file = file.path(diffexp.results.dir, paste0("batch", batch,"_tT_", microplastic, ".csv")))
+write.csv(head(tT, n = 100) , file.path(diffexp.results.dir, paste0("batch", batch,"_tT_top100_", microplastic, ".csv")))
+
+
+microplastic_fullname <- microplastic
+if (microplastic_fullname == "poly"){
+  
+  if(batch == 1){
+    microplastic_fullname <- "polyurethane"}
+  
+  else if(batch == 2){
+    microplastic_fullname <- "polypropylene"}
+}
 
 
 # ================================================================================== #
 # 2.1. VOLCANO PLOT ================================================================
 # ================================================================================== #
-cat(paste("Starting 2.1. VOLCANO PLOT", microplastic), format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+cat(paste("Starting 2.1. VOLCANO PLOT", microplastic_fullname), format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
 
 volcano <- ggplot(tT, aes(x = log2FoldChange, y = -log10(pvalue))) +
-  ggtitle(paste(microplastic)) +
+  ggtitle(paste(microplastic_fullname)) +
   geom_point(aes(color = Legend)) +
   scale_color_manual(values = c("Downregulated" = "blue", "Not Significant" = "grey", "Upregulated" = "red"), drop = FALSE)+
   geom_hline(yintercept =-log10(max(tT2$pvalue)),colour="black", linetype="dashed")+
@@ -334,7 +271,7 @@ volcano <- ggplot(tT, aes(x = log2FoldChange, y = -log10(pvalue))) +
                                    legend.text = element_text(size = 14),
                                    legend.title = element_text(size = 16)) 
 
-ggsave(volcano, filename = file.path(diffexp.figures.dir, paste0(microplastic,"_volcano_plot.png")),
+ggsave(volcano, filename = file.path(diffexp.figures.dir, paste0("batch", batch,"_",microplastic_fullname,"_volcano_plot.png")),
        width = 25, height = 25,
        units = "cm")
 
@@ -344,21 +281,14 @@ listofresults <- list(tT = tT, tT2 = tT2, volcano = volcano)
 saveRDS(listofresults, file = file.path(diffexp.results.dir, "listofresults.RDS"))
 
 
-} #close function
+} #close diffexp function
 
-
-diffexp_deseq(microplastic = "total_mp")
-diffexp_deseq(microplastic = "nylon")
-diffexp_deseq(microplastic = "polyu")
 
 
 
 # ================================================================================== #
-# 2.2. BOXPLOTS ================================================================
+# 2.2. BOXPLOTS(definme function) ==================================================
 # ================================================================================== #
-
-
-
 
 boxplot_func <- function(microplastic){
   
@@ -369,15 +299,66 @@ diffexp.figures.dir <- file.path(diffexp.dir, "figures")
 
 listofresults <- readRDS(file.path(diffexp.results.dir, "listofresults.RDS"))
 
-if(microplastic == "total_mp"){
-  clinical <- clinical_total_mp}
+if(batch == 1){ #batch is the index in loop after deseq and boxplot function
+  total_mp <- total_mp1
+  nylon <- nylon1
+  poly <- poly1
+  
+  #Match up patients
+  #SEO250, SEO131 and SEO304 only have biopsy sample, not brush
+  
+  if(microplastic == "total_mp"){
+  matching_patients <- intersect(row.names(total_mp),clinical_brush$Study.ID)
+  clinical<- clinical_brush[match(matching_patients,clinical_brush$Study.ID),] %>% 
+    mutate(quantity = total_mp[matching_patients,'Total nr. of microplastics']) %>% 
+    mutate(exposure = ifelse(quantity < 8.45, "low", "high"))}
+  
+  if(microplastic == "nylon"){
+  matching_patients <- intersect(row.names(nylon),clinical_brush$Study.ID)
+  clinical <- clinical_brush[match(matching_patients,clinical_brush$Study.ID),] %>% 
+    mutate(quantity = nylon[matching_patients,'Nylon']) %>% 
+    mutate(exposure = ifelse(quantity < 22.88, "low", "high"))}
+  
+  if(microplastic == "poly"){
+  matching_patients <- intersect(row.names(poly),clinical_brush$Study.ID)
+  clinical <- clinical_brush[match(matching_patients,clinical_brush$Study.ID),] %>% 
+    mutate(quantity = poly[matching_patients,'Polyurethane']) %>% 
+    mutate(exposure = ifelse(quantity < 67.44, "low", "high"))}
+  
+}
 
-if(microplastic == "nylon"){
-  clinical <- clinical_nylon}
 
-
-if(microplastic == "polyu"){
-  clinical <- clinical_polyu}
+if(batch == 2){
+  total_mp <- total_mp2
+  nylon <- nylon2
+  poly <- poly2
+  
+  
+  #Match up patients
+  if(microplastic == "total_mp"){
+    
+    #SEO532 - no expression data
+    matching_patients <- intersect(row.names(total_mp),clinical_brush$Study.ID)
+    clinical <- clinical_brush[match(matching_patients,clinical_brush$Study.ID),] %>% 
+      mutate(quantity = total_mp[matching_patients,'Total ng/ml of microplastics']) %>% 
+      mutate(exposure = total_mp[matching_patients,'Category'])}
+  
+  if(microplastic == "nylon"){
+    
+    matching_patients <- intersect(row.names(nylon),clinical_brush$Study.ID)
+    clinical <- clinical_brush[match(matching_patients,clinical_brush$Study.ID),] %>% 
+      mutate(quantity = nylon[matching_patients,'Nylon ng/ml']) %>% 
+      mutate(exposure = nylon[matching_patients,'Category'])}
+  
+  
+  if(microplastic == "poly"){
+    matching_patients <- intersect(row.names(poly),clinical_brush$Study.ID)
+    clinical <- clinical_brush[match(matching_patients,clinical_brush$Study.ID),] %>% 
+      mutate(quantity = poly[matching_patients,'Polypropylene ng/ml']) %>% 
+      mutate(exposure = poly[matching_patients,'Category'])}
+  
+  clinical$exposure <- tolower(clinical$exposure) #make lowercase to match batch 1
+}
 
 boxplotcounts <- counts_brush[,row.names(clinical)]
 counts_brush_voom <- voom(boxplotcounts)
@@ -397,11 +378,22 @@ top10 <- if (length(tT2_genes) >= 10) {
 }
 
 
+microplastic_fullname <- microplastic
+if (microplastic_fullname == "poly"){
+  
+  if(batch == 1){
+    microplastic_fullname <- "polyurethane"}
+  
+  else if(batch == 2){
+    microplastic_fullname <- "polypropylene"}
+}
 
-pdf(file = file.path(diffexp.figures.dir, paste0(microplastic,"_boxplot",".pdf")),
+
+
+pdf(file = file.path(diffexp.figures.dir, paste0("batch", batch,"_",microplastic_fullname,"_boxplot",".pdf")),
     height = 8,
     width= 6)
-cat("Starting plots", microplastic, format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+cat("Starting plots", microplastic_fullname, format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
 
 
 for (gene in c(top10)){
@@ -445,7 +437,8 @@ stat.table3$p <- signif(as.numeric(stat.table3$p), digits = 4)
 logFC_res <- listofresults[["tT"]][gene, "log2FoldChange"]
 pval_res <- listofresults[["tT"]][gene, "pvalue"]
 
-cat("   Making boxplot", microplastic, gene_hgnc, format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+cat("   Making boxplot", microplastic_fullname, gene_hgnc, format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+
 
 boxplotimage <- ggplot(plot, aes(
   x = as.factor(exposure),
@@ -461,9 +454,9 @@ boxplotimage <- ggplot(plot, aes(
               size = 2.5,
               width = 0.3) +
   
-  labs(title = paste(gene_hgnc, "expression:", microplastic, "exposure" )) +
+  labs(title = paste(gene_hgnc, "expression:", microplastic_fullname, "exposure" )) +
   ylab (label =  paste(gene_hgnc, "expression")) +
-  xlab (label = paste(microplastic, "exposure")) +
+  xlab (label = paste(microplastic_fullname, "exposure")) +
   
   
   
@@ -485,9 +478,9 @@ scatterplotimage <- ggplot(plot, aes(
   geom_point(aes(color = exposure)) +
   
   
-  labs(title = paste(gene_hgnc, "expression vs", microplastic, "quantity" )) +
+  labs(title = paste(gene_hgnc, "expression vs", microplastic_fullname, "quantity" )) +
   ylab (label = paste(gene_hgnc, "expression")) +
-  xlab (label = paste("Quantity of", microplastic, "exposure")) +
+  xlab (label = paste("Quantity of", microplastic_fullname, "exposure")) +
   
   scale_x_continuous(labels = scales::label_number(accuracy = 0.01)) +
   
@@ -515,18 +508,172 @@ print(image)
 } #close loop of top10genes
 dev.off()
 
-} # close function
+} # close the boxplot function 
 
 
-boxplot_func(microplastic = "total_mp")
-boxplot_func(microplastic = "nylon")
-boxplot_func(microplastic = "polyu")
+
+
+
+
+# ================================================================================== #
+# 3. RUN THE FUNCTIONS ================================================================
+# ================================================================================== #
+
+for (batch in 1:2){
+  
+  mp.dir <- file.path(output.dir, "microplastics", paste0("data_batch", batch))
+  if(!exists(mp.dir)) dir.create(mp.dir)
+  
+  diffexp_deseq_func(microplastic = "total_mp")
+  diffexp_deseq_func(microplastic = "nylon")
+  diffexp_deseq_func(microplastic = "poly")
+  
+  boxplot_func(microplastic = "total_mp")
+  boxplot_func(microplastic = "nylon")
+  boxplot_func(microplastic = "poly")
+
+} # close batch loop
+
 
 cat("END OF THIS JOB", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+stop()
 
 
 
 
+# #### edgeR ####
+# 
+# diffexp_edgeR <- function(microplastic) {
+# 
+#   
+#   #Make output directory for total_mp or nylon or poly
+#   this.mp.dir <- file.path(mp.dir, microplastic)
+#   if(!exists(this.mp.dir)) dir.create(this.mp.dir, recursive = TRUE)
+#   
+#   diffexp.dir <- file.path(this.mp.dir, "diffexp")
+#   if(!exists(diffexp.dir)) dir.create(diffexp.dir, recursive = TRUE)
+#   
+#   
+#   #Set results paths
+#   diffexp.results.dir <- file.path(diffexp.dir, "results")
+#   if(!exists(diffexp.results.dir)) dir.create(diffexp.results.dir, recursive = TRUE)
+#   
+#   
+#   diffexp.figures.dir <- file.path(diffexp.dir, "figures")
+#   if(!exists(diffexp.figures.dir)) dir.create(diffexp.figures.dir, recursive = TRUE)
+#   
+#   
+# 
+#   if(microplastic == "total_mp"){
+#   clinical <- clinical_total_mp}
+#   
+#   if(microplastic == "nylon"){
+#   clinical <- clinical_nylon}
+#   
+#   
+#   if(microplastic == "poly"){
+#   clinical <- clinical_poly}
+#   
+#   
+#   counts <- counts_brush[,row.names(clinical)]
+#   
+# 
+# 
+#   design <- model.matrix(~ 0 + exposure + age + sex + smoking_status, 
+#                           data = clinical) #Design matrix
+#   
+#   colnames(design)[1:2] <- c(levels(as.factor(clinical$exposure)))
+#   
+#   DGEL<- DGEList(counts=counts) 
+#   
+#   # FILTER
+#   keep <- filterByExpr(DGEL, group = clinical$classification) 
+#   # The filterBy Expr function keeps rows that have worthwhile counts in a minimum number of samples.
+#   # keep <- which(rowMedians(as.matrix(DGEL))>10) 
+#   # keep <- rowSums(cpm(expression)>100) >= 2
+#   
+#   
+#   DGEL<-DGEL[keep, , keep.lib.sizes=FALSE] # When you subset a DGEList and specify keep.lib.sizes=FALSE, the lib.size for each sample will be recalculated to be the sum of the counts left in the rows of the experiment for each sample.
+#   # expression <- DGEL$counts
+#   
+#   # NORMALISE
+#   DGEL<- calcNormFactors(DGEL,method = "TMM")
+#   
+#   # ESTIMATE DISPERSON
+#   DGEL <- estimateDisp(DGEL, design)
+#   
+#   # FIT MODEL
+#   fit <- glmQLFit(DGEL, design, robust = TRUE) #fit the GLM (design) to the DGEL(the DGEL object, which contains the counts data that has been filtered,normalised and dispersons estimtated)
+#   
+#   my.contrasts <- makeContrasts(contrast1 = high - low,
+#                                 levels = design)
+#   
+#   qlf <- glmQLFTest(fit, contrast=my.contrasts[,1], robust)
+#   
+#   tT <- topTags(qlf,n=nrow(DGEL))$table #topTags gets top genes, here we want all of the genes, edgeR's default p.adjust method is BH
+#   tT$Legend <- ifelse(
+#     tT$FDR < 0.05 & tT$logFC > 0, "Upregulated",
+#     ifelse(
+#       tT$FDR < 0.05 & tT$logFC < 0, "Downregulated",
+#       "Not Significant"))
+#   
+#   tT$Legend[is.na(tT$Legend)]="Not Significant"
+#   
+#   tT$Legend <- factor(tT$Legend, levels = c("Downregulated", "Upregulated", "Not Significant"))
+#   
+#   tT$gene_symbol=hgnc_symbols_db[row.names(tT), "SYMBOL"] #add hgnc symbols
+#   
+#   # if(showEnsemblID == TRUE){
+#     #for those with no hgnc symbol, label with ensembl id
+#     tT[which(is.na(tT$gene_symbol)), "gene_symbol"] <- row.names(tT)[(which(is.na(tT$gene_symbol)))] #listofresults_withensembl
+#   # }
+#   # 
+#   # else{
+#   #   #for those with no hgnc symbol, remove
+#   #   tT <- tT[-which(is.na(tT$gene_symbol)), ] #listofresults_hgnconly
+#   # }
+#   
+#   selection <-which(tT$FDR<0.05)
+#   
+#   tT2 <- tT[selection,]
+#   
+#   write.csv(tT, file = paste0(diffexp.results.dir, "tT_", microplastic, ".csv"))
+#   write.csv(head(tT, n = 100) , file = paste0(diffexp.results.dir, "tT_top100_", microplastic, ".csv"))
+#   
+#   
+#   # ================================================================================== #
+#   # 2.1. VOLCANO PLOT ================================================================
+#   # ================================================================================== #
+#   cat(paste("Starting 2.1. VOLCANO PLOT", microplastic), format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+#   
+#   volcano <- ggplot(tT, aes(x = logFC, y = -log10(PValue))) +
+#     ggtitle(paste(microplastic)) +
+#     geom_point(aes(color = Legend)) +
+#     scale_color_manual(values = c("Downregulated" = "blue", "Not Significant" = "grey", "Upregulated" = "red"), drop = FALSE)+
+#     geom_hline(yintercept =-log10(max(tT2$PValue)),colour="black", linetype="dashed")+
+#     geom_text_repel(data = subset(tT2[1:30,]),
+#                     aes(label= gene_symbol),size = 4, box.padding = unit(0.35, "lines"),
+#                     point.padding = unit(0.3, "lines") ) +
+#     theme_bw(base_size = 18) + theme(legend.position = "bottom",
+#                                      legend.text = element_text(size = 14),
+#                                      legend.title = element_text(size = 16)) 
+#   
+#   ggsave(volcano, filename = file.path(diffexp.figures.dir, paste0(microplastic,"_volcano_plot.png")),
+#          width = 25, height = 25,
+#          units = "cm")
+#   
+#   
+#   listofresults <- list(tT = tT, tT2 = tT2, volcano = volcano)
+#   #Save all results
+#   saveRDS(listofresults, file = file.path(diffexp.results.dir, "listofresults.RDS"))
+#   
+# 
+# } #close function
+# 
+# 
+# diffexp_edgeR(microplastic = "total_mp")
+# diffexp_edgeR(microplastic = "nylon")
+# diffexp_edgeR(microplastic = "poly")
 
 
 
