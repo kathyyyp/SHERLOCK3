@@ -197,7 +197,7 @@
     
     serpina1_all_snps_df <- rbind(A_IDs,not_A_IDs)
     
-    length(unique(row.names(serpina1_all_snps_df))) $#626 patients with genotyping data
+    length(unique(row.names(serpina1_all_snps_df))) #626 patients with genotyping data
       
       
       
@@ -225,17 +225,15 @@
     
   
 
-    serpina1_pathogenic_snps_df[,c("chr14:94378610_C_T", "chr14:94380925_T_A", "chr14:94383051_G_A", "chr14:94378528_G_A", "chr14:94382686_G_C",  "chr14:94378529_G_A", "chr14:94381067_T_A" )]
-    serpina1_pathogenic_snps_df["A_1877",c("chr14:94378610_C_T", "chr14:94380925_T_A", "chr14:94383051_G_A", "chr14:94378528_G_A", "chr14:94382686_G_C",  "chr14:94378529_G_A", "chr14:94381067_T_A" )]
-    
-    
-    ordered <- data.frame(rowSums(serpina1_pathogenic_snps_df[,c("chr14:94378610_C_T", "chr14:94380925_T_A", "chr14:94383051_G_A", "chr14:94378528_G_A", "chr14:94382686_G_C",  "chr14:94378529_G_A", "chr14:94381067_T_A" )]))
-    colnames(ordered) <- "sum"
-    ordered[order(ordered$sum),]
-    
     serpina1_snps <- serpina1_pathogenic_snps_df[,c("chr14:94378610_C_T", "chr14:94380925_T_A", "chr14:94383051_G_A", 
                                                     "chr14:94378528_G_A", "chr14:94382686_G_C",  "chr14:94378529_G_A", "chr14:94381067_T_A" )]
     
+    
+    ordered <- data.frame(rowSums(
+      serpina1_snps[,c("chr14:94378610_C_T", "chr14:94380925_T_A", "chr14:94383051_G_A", 
+                                     "chr14:94378528_G_A", "chr14:94382686_G_C",  "chr14:94378529_G_A", "chr14:94381067_T_A" )]))
+    colnames(ordered) <- "sum"
+    ordered[order(ordered$sum),]
 
     serpina1_snps[,1][serpina1_snps[,1] == 2]="ZZ"
     serpina1_snps[,1][serpina1_snps[,1] == 1]="Z"
@@ -264,48 +262,33 @@
     
                                  
     #Get genotyping numbers
-        table=matrix(ncol=1,nrow=nrow(serpina1_snps))
+    serpina1_genotypes=matrix(ncol=1,nrow=nrow(serpina1_snps))
     for (i in 1:nrow(serpina1_snps)){
       c <- serpina1_snps[i,]
       c <- c[!is.na(c)]
       if(length(c) == 0 ){ 
-        table[i,] = "MM"}
+        serpina1_genotypes[i,] = "MM"}
       else{
-        table[i,] = paste0(c, collapse = "")
+        serpina1_genotypes[i,] = paste0(c, collapse = "")
       }
       
-print(i)
+      
+      print(i)
       
     }
         
   #Add to study IDs      
-    table <- data.frame(table)
-    table(table)
-    table$Study.ID <- row.names(serpina1_snps)
-    row.names(table) <- table$Study.ID
+    serpina1_genotypes <- data.frame(serpina1_genotypes)
+    serpina1_genotypes$Study.ID <- row.names(serpina1_snps)
+    row.names(serpina1_genotypes) <- serpina1_genotypes$Study.ID
+    colnames(serpina1_genotypes)[1] <- "genotype"
+    table(serpina1_genotypes$genotype)
     
-    #Subset for those with exp data
-    table_exp <- table[intersect(clinical_sk_all$Study.ID, table$Study.ID),]
-    table(table_exp[,1])
+    #Add M to the genotypes that have one risk allele 
+    rows_addm <-which(serpina1_genotypes$genotype %in% c("I", "S", "null", "P393S", "Z"))
+    serpina1_genotypes[rows_addm, "genotype"] <- paste0("M",serpina1_genotypes[rows_addm, "genotype"])
+    table(serpina1_genotypes$genotype)
     
-    
-    
-    ##### checking if we can just use POS to match up (and not include the base pairs) -----------------------------------
-    # colnames(serpina1_all_snps_df)[str_extract(colnames(serpina1_all_snps_df), "(?<=:)[^_]+") %in%   #extract pos only
-    # str_extract(pathogenic_serpina1_loc, "(?<=:)[^_]+")] 
-    
-    # setdiff(colnames(serpina1_all_snps_df)[str_extract(colnames(serpina1_all_snps_df), "(?<=:)[^_]+") %in%   
-    # str_extract(pathogenic_serpina1_loc, "(?<=:)[^_]+")] ,
-    # colnames(serpina1_pathogenic_snps_df))
-    
-    
-    # [1] "chr14:94378547_C_T" "chr14:94378610_C_T" "chr14:94382686_G_A"
-    # These are in  colnames(serpina1_all_snps_df)
-    
-    # pathogenic_serpina1_loc[which(str_extract(pathogenic_serpina1_loc, "(?<=:)[^_]+") %in% c(94378547, 94378610, 94382686))]
-    # [1] "chr14:94378610_C_G"  "chr14:94378547_C_CG" "chr14:94378547_CG_C" "chr14:94382686_G_C" 
-    
-    ## cannot just use pos!! some of the base changes are different at the same position) -----------------------------------
     
     
     # Pull out Z mutation (ch14 pos94378610 for hg38) ---------------------------------------------------------------------------------------------
@@ -314,17 +297,9 @@ print(i)
     serpina1_all_snps_df[,which(colnames(serpina1_all_snps_df) ==  "chr14:94378610_C_T")] #Z mutation
     # chr14 94378610   ref=C   alt=T 
     
-    #Get z mutations only
+    # Get z mutations only
     serpina1_z_snp <- as.data.frame(cbind(Study.ID = row.names(serpina1_all_snps_df), 
                                           z_mutation = as.numeric(serpina1_all_snps_df[,which(colnames(serpina1_all_snps_df) ==  "chr14:94378610_C_T")])))
-    
-    
-    
-    
-    #### 09/02/2026 need to add in other pathogenic snp variants here!!!!!!!
-    
-  
-      #add in antonias exome data???
     
     
     row.names(serpina1_z_snp) <- serpina1_z_snp$Study.ID #There are 626 patients with genotyping data
@@ -333,8 +308,9 @@ print(i)
     write.csv(serpina1_z_snp, file.path(processed.data.dir, "snp_array","serpina1_z_snp_dosage.csv"), row.names = FALSE)
     
     
-    matching_ids <- intersect(clinical_sk_all$Study.ID, row.names(serpina1_z_snp)) #432 patients that have genotyping data AND gene expresion data. 194 have genotyping but not gene expression
     
+    # Match up to those that have expression to get number of samples 
+    matching_ids <- intersect(clinical_sk_all$Study.ID, row.names(serpina1_z_snp)) #432 patients that have genotyping data AND gene expresion data. 194 have genotyping but not gene expression
     clinical2 <- clinical_sk_all[clinical_sk_all$Study.ID %in% matching_ids,] #(674 samples from 432 patients)
     clinical2 <- cbind(clinical2, serpina1_z_snp_GRCh38_ch14_pos94378610 = serpina1_z_snp[match(clinical2$Study.ID, serpina1_z_snp$Study.ID),
                                                                                           "z_mutation"])
@@ -380,9 +356,10 @@ print(i)
     
     
     
-    # Make master table!
+    # Make master table!!!!
     clinical123_master <- clinical_sk_all
     clinical123_master$serpina1_z_snp_GRCh38_ch14_pos94378610 <- serpina1_z_snp[match(clinical_sk_all$Study.ID, serpina1_z_snp$Study.ID), "z_mutation"]
+    clinical123_master$serpina1_expanded_genotypes <- serpina1_genotypes[match(clinical_sk_all$Study.ID, serpina1_genotypes$Study.ID), "genotype"]
     
     
     
