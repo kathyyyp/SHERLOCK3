@@ -283,11 +283,19 @@
     row.names(serpina1_genotypes) <- serpina1_genotypes$Study.ID
     colnames(serpina1_genotypes)[1] <- "genotype"
     table(serpina1_genotypes$genotype)
+    # MI     MM  Mnull MP393S     MS     MZ     SS     ZI  Znull     ZS     ZZ
+    # 5    519      2      1     33     37      2      1      4      2     20
     
     #Add M to the genotypes that have one risk allele 
     rows_addm <-which(serpina1_genotypes$genotype %in% c("I", "S", "null", "P393S", "Z"))
     serpina1_genotypes[rows_addm, "genotype"] <- paste0("M",serpina1_genotypes[rows_addm, "genotype"])
     table(serpina1_genotypes$genotype)
+    table(serpina1_genotypes[intersect(serpina1_genotypes$Study.ID, clinical_sk_all$Study.ID), "genotype"])
+    
+    # MI     MM  Mnull MP393S     MS     MZ     SS     ZI  Znull     ZZ
+    # 1    366      2      1     20     29      1      1      2      9
+    
+    # [1] "A_1868" "SEO067" are ZS but don't have expression data
     
     
     
@@ -355,17 +363,38 @@
     # Severe COPD        75  6  5
     
     
-    
-    # Make master table!!!!
+    ### MAKE MASTER TABLE  ------------------------------------------------------------------------------------------------------
+  
     clinical123_master <- clinical_sk_all
     clinical123_master$serpina1_z_snp_GRCh38_ch14_pos94378610 <- serpina1_z_snp[match(clinical_sk_all$Study.ID, serpina1_z_snp$Study.ID), "z_mutation"]
     clinical123_master$serpina1_expanded_genotypes <- serpina1_genotypes[match(clinical_sk_all$Study.ID, serpina1_genotypes$Study.ID), "genotype"]
+    
+    # Reassign genotype labels to group them together
+    # MI     MM  Mnull MP393S     MS     MZ     SS     ZI  Znull     ZZ
+    # 1    366      2      1     20     29      1      1      2      9
+    
+    # **Names for categories**
+    # MM → “MM”
+    # MS → “MS”
+    # SS -> SS
+    # MZ → “MZ/MI/Mnull/MP393S”
+    # ZZ → “ZZ/Znull/Zi”
+    
+    MZ_group <- c("MZ", "MI", "Mnull", "MP393S")
+    ZZ_group <- c("ZZ", "ZI", "Znull")
+    
+    clinical123_master[which(clinical123_master$serpina1_expanded_genotypes == "MM"), "serpina1_genotype_group"] <- "MM"
+    clinical123_master[which(clinical123_master$serpina1_expanded_genotypes == "MS"), "serpina1_genotype_group"] <- "MS"
+    clinical123_master[which(clinical123_master$serpina1_expanded_genotypes == "SS"), "serpina1_genotype_group"] <- "SS"
+    clinical123_master[which(clinical123_master$serpina1_expanded_genotypes %in% MZ_group), "serpina1_genotype_group"] <- "MZ.MI.Mnull.MP393S"
+    clinical123_master[which(clinical123_master$serpina1_expanded_genotypes %in% ZZ_group), "serpina1_genotype_group"] <- "ZZ.Znull.ZI"
     
     
     
     ### START EXTRA WRANGLING ------------------------------------------------------------------------------------------------------
     # 15/01/26: Came back to add this section after running 5_SHERLOCK_radiomics and SHERLOCK_sysmex_diffexp.R scripts,  before starting SHERLOCK_sysmex_multivariate.R script
-    # The below wrangling is unrelated to this script. editing radiomics and sysmex variables columns so that clinical_sherlock123_master.rds IS THE MOST UPDATED FILE THAT CAN BE USED FOR EVERYTHING ! ###
+    # The below wrangling is unrelated to this script. editing radiomics and sysmex variables columns so 
+      # that clinical_sherlock123_master.rds IS THE MOST UPDATED FILE THAT CAN BE USED FOR EVERYTHING ! ###
     
     
     ## FOR RADIOMICS COLUMNS
@@ -407,7 +436,7 @@
     
     sapply(clinical123_master[sysmex_index_start:sysmex_index_end],class)
     
-    ### END EXTRA WRANGLING ---------------------------------------------------------------------------
+    ### END EXTRA WRANGLING & SAVE MASTER CLINICAL FILE---------------------------------------------------------------------------
     
     saveRDS(clinical123_master, file.path(postQC.data.dir,  "master","clinical_sherlock123_master.rds"))
     write.csv(clinical123_master, file.path(postQC.data.dir,  "master","clinical_sherlock123_master.csv"))
@@ -625,6 +654,9 @@
   library("ggfortify")
   library("stringr")
   library("tidyverse")
+  library("ggpubr")
+  library("rstatix")
+  library("GSVA")
   
   # ================================================================================== #
   ## 2B. SET UP DIRECTORY & OUTPUT PATHS =============================================
@@ -643,7 +675,7 @@
   output.dir <- file.path(main.dir, "output","aatd")
   
   #DESEQ DIRECTORY
-  diffexp.dir <- file.path(output.dir, "diffexp_serpina1_deseq_withoutage", "rm_LIB5426585_SAM24375557")
+  diffexp.dir <- file.path(output.dir, "diffexp_serpina1_deseq_withoutage", "rm_LIB5426585_SAM24375557", "expanded_genotypes_clean")
   if(!exists(diffexp.dir))dir.create(diffexp.dir)
   
   setwd(file.path(main.dir))
@@ -654,7 +686,17 @@
   
   hgnc_symbols_db <- readRDS(file.path(postQC.data.dir,"hgnc_symbols_db.rds"))
   clinical123_master <- readRDS(file.path(postQC.data.dir,  "master","clinical_sherlock123_master.rds"))
-  colnames(clinical123_master)[which(colnames(clinical123_master) == "serpina1_z_snp_GRCh38_ch14_pos94378610")] <- "serpina1_snp"
+  colnames(clinical123_master)[which(colnames(clinical123_master) == "serpina1_z_snp_GRCh38_ch14_pos94378610")] <- "serpina1_z_snp"
+ 
+  clinical123_master[which(clinical123_master$serpina1_genotype_group == "SS"), "serpina1_genotype_group"] <- NA
+    
+    
+  to_new_col <- which(clinical123_master$serpina1_expanded_genotypes %in% c("MM", "MZ", "MS", "ZZ"))
+  
+  #new column with cleaner genotypes (excluding MI, MNull, MP393S, ZI, SS)
+  clinical123_master[to_new_col, "serpina1_genotype_group_clean"] <- clinical123_master[to_new_col,"serpina1_expanded_genotypes"]
+  
+
   
   # Brush SHERLOCK1, 2 and 3 counts
   counts123_brush <- read.csv(file.path(combat.processed.data.dir, "sherlock1_2_3_counts_brush_integrated.csv"), check.names = FALSE, row.names = 1) #from SHERLOCK_SOP_integration.R script (copied from  "/groups/umcg-griac/tmp02/projects/SHERLOCK_2025/data/sherlock1_2_3_combat)
@@ -665,28 +707,46 @@
   clinical_biopt <- clinical123_master[which(clinical123_master$sampletype == "Biopt"),]
   counts23_biopt <- counts23_biopt[,row.names(clinical_biopt)]
   
-  #General COPD vs Severe COPD
-  # MM = 0
-  # MZ = 1
-  # ZZ = 2
   
-  table(clinical_brush$classification, clinical_brush$serpina1_snp)
-  #                      0   1   2
-  # Control             88   3   0
-  # Mild-moderate COPD 116   9   0
-  # Severe COPD        171  17   9
-  
-  table(clinical_biopt$classification, clinical_biopt$serpina1_snp)
-  #                     0  1  2
-  # Control            69  2  0
-  # Mild-moderate COPD 98  6  0
-  # Severe COPD        75  6  5
-  
-  #make valid names
+  table(clinical123_master[!duplicated(clinical123_master$Study.ID),"classification"], clinical123_master[!duplicated(clinical123_master$Study.ID),"serpina1_expanded_genotypes"])
+  #                      MI  MM Mnull MP393S  MS  MZ  SS  ZI Znull  ZZ
+  # Control              1  88     1      1   3   4   0   0     0   0
+  # Mild-moderate COPD   0 117     1      0   5   9   1   0     0   0
+  # Severe COPD          0 161     0      0  12  16   0   1     2   9
+  # 
   
   
+  #For all unique PATIENTS -------------------------------------------------------------------------------------------------------#
+  table(clinical123_master[!duplicated(clinical123_master$Study.ID),"classification"], clinical123_master[!duplicated(clinical123_master$Study.ID),"serpina1_genotype_group_clean"])
+  #                    MM  MS MZ.MI.Mnull.MP393S  SS ZZ.Znull.ZI
+  # Control             88   3                  7   0           0
+  # Mild-moderate COPD 117   5                 10   1           0
+  # Severe COPD        161  12                 16   0          12
+  # 
   
   
+  # For samples ------------------------------------------------------------------#
+  table(clinical_brush$classification, clinical_brush$serpina1_genotype_group_clean)
+  #                     MM  MS MZ.MI.Mnull.MP393S  SS ZZ.Znull.ZI
+  # Control             82   3                  6   0           0
+  # Mild-moderate COPD 110   4                 10   1           0
+  # Severe COPD        159  12                 14   0          12
+  
+  
+
+  table(clinical_biopt$classification, clinical_biopt$serpina1_genotype_group_clean)
+  #                    MM MS MZ.MI.Mnull.MP393S SS ZZ.Znull.ZI
+  # Control            66  1                  4  0           0
+  # Mild-moderate COPD 92  4                  7  1           0
+  # Severe COPD        69  6                  5  0           6
+  
+  
+  all(is.na(clinical123_master$serpina1_z_snp) == is.na(clinical123_master$serpina1_genotype_group_clean))
+  all(is.na(clinical123_master$serpina1_z_snp) == is.na(clinical123_master$serpina1_expanded_genotypes))
+  all(is.na(clinical123_master$serpina1_expanded_genotypes) == is.na(clinical123_master$serpina1_genotype_group_clean))
+  
+  # Exclude SS from analysis!! Not enough samples
+
   # ================================================================================== #
   # 3. DIFFERENTIAL EXPRESSION (DESeq2) =============================================
   # General COPD (Subset only for Mild/Mod and Severe COPD. Compare the genotypes)
@@ -743,9 +803,8 @@
       clinical <- clinical[-which(row.names(clinical) %in% outliers),]
     }
     
-    #Remove samples with NA serpina1 snp data
-    clinical <- clinical[-which(is.na(clinical$serpina1_snp)),]
-    counts <- counts[,row.names(clinical)]
+    #Remove samples with SS and NA serpina1_genotype_group_clean data and change numbers to letters
+    clinical <- clinical[-which(is.na(clinical$serpina1_genotype_group_clean)),]
     
     #make names valid
     clinical$smoking_status<- make.names(clinical$smoking_status)
@@ -758,7 +817,7 @@
       # DGE
       dds <- DESeqDataSetFromMatrix(countData = counts,
                                     colData = clinical,
-                                    design = ~ 0 + serpina1_snp + sex + smoking_status)
+                                    design = ~ 0 + serpina1_genotype_group_clean + sex + smoking_status)
     }
     
     
@@ -771,7 +830,7 @@
       # DGE
       dds <- DESeqDataSetFromMatrix(countData = counts,
                                     colData = clinical,
-                                    design = ~ 0 + serpina1_snp + sex ) #no smokers in severe group
+                                    design = ~ 0 + serpina1_genotype_group_clean + sex ) #no smokers in severe group
       
     }
     
@@ -788,16 +847,43 @@
     # results extracts a result table from a DESeq analysis giving base means across samples, log2 fold changes, standard errors, test statistics, p-values and adjusted p-values;
     resultsNames(dds)
     
-    listofcontrasts <- list(
-      MZ_MM = c("serpina1_snp", "1", "0"),#This means we have set snp1 (MZ) as control and we define fold change based on snp1 as baseline (log fold change = MZ - MMM)
-      ZZ_MM = c("serpina1_snp", "2", "0"),
-      ZZ_MZ = c("serpina1_snp", "2", "1")
+    genotype_levels <- levels(factor(clinical$serpina1_genotype_group_clean))
+    comparisons_to_run <- data.frame(t(combn(genotype_levels, 2)))
+    comparisons_to_run$name <- paste0(comparisons_to_run[,2], "_vs_", comparisons_to_run[,1])
       
-    )
+    listofcontrasts <- list()
+    for (d in 1:nrow(comparisons_to_run)){
+      listofcontrasts[[comparisons_to_run$name[d]]] <- c("serpina1_genotype_group_clean", comparisons_to_run[d, 2], comparisons_to_run[d, 1] )
+      
+    }
+      
+    # > listofcontrasts
+    # $MS_vs_MM
+    # [1] "serpina1_genotype_group_clean" "MS" "MM"
+    # 
+    # $MZ.MI.Mnull.MP393S_vs_MM
+    # [1] "serpina1_genotype_group_clean" "MZ.MI.Mnull.MP393S" "MM"
+    # 
+    # $ZZ.Znull.ZI_vs_MM
+    # [1] "serpina1_genotype_group_clean" "ZZ.Znull.ZI" "MM"
+    # 
+    # $MZ.MI.Mnull.MP393S_vs_MS
+    # [1] "serpina1_genotype_group_clean" "MZ.MI.Mnull.MP393S" "MS"
+    # 
+    # $ZZ.Znull.ZI_vs_MS
+    # [1] "serpina1_genotype_group_clean" "ZZ.Znull.ZI" "MS"
+    # 
+    # $ZZ.Znull.ZI_vs_MZ.MI.Mnull.MP393S
+    # [1] "serpina1_genotype_group_clean" "ZZ.Znull.ZI" "MZ.MI.Mnull.MP393S"
     
     listoftT <- list()
     listoftT2 <- list()
     listofvolcano <- list()
+    
+    
+    pdf(file = file.path(diffexp.figures.dir, paste0(disease_group,"_",sampletype, "_volcano",".pdf")),
+        height = 8,
+        width= 6)
     
     for (contrast in names(listofcontrasts)){
       cat(paste(sampletype, contrast), format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
@@ -872,8 +958,11 @@
              width = 25, height = 25,
              units = "cm")
       
+      
+      print(volcano)
     } #close listofcontrasts loop
     
+    dev.off() #close pdf
     listofresults <- list(tT = listoftT, tT2 = listoftT2, volcano = listofvolcano)
     
   } #end diffexp deseq function
@@ -899,76 +988,17 @@
           file = file.path(diffexp.dir, "severe_copd", "results","listofresults.rds"))
   
   
+  cat(paste("DIFFERENTIAL EXPRESSION FINISHED"), format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+  
   # } #close the hpc_batch_job. script from here on will be run
-  
-  
-  # options(error = function() { traceback(); quit(status = 1) })
-  #options(error = ...) tells r to run the function
-  #traceback()	prints the call stack (what functions were running in what order at the time of failure. traceback(2) means skip the top frame (the error handler itself).
-  #quit(status = 1) tells R to exit and that the script has failed (1=FAIL and 0 = SUCCESS) - sacct command will show job status as FAILED
-  
-  # ================================================================================== #
-  ## 6A. SCRIPT SET UP ===============================================================
-  # ================================================================================== #
-  my_directory <- "/groups/umcg-griac/tmp02/projects/KathyPhung/SHERLOCK3"
-  
-  library("readxl")
-  library("ggplot2")
-  library("DESeq2")
-  library("ggrepel")
-  library("ggfortify")
-  library("stringr")
-  library("tidyverse")
-  library("rstatix")
-  library("ggpubr")
-  
-  # ================================================================================== #
-  ## 6B. SET UP DIRECTORY & OUTPUT PATHS =============================================
-  # ================================================================================== #
-  main.dir <- my_directory
-  
-  #Data directory
-  data.dir <- file.path(main.dir,"data")
-  
-  processed.data.dir <- file.path(data.dir,"processed")
-  
-  postQC.data.dir <- file.path(processed.data.dir, "datawrangling_qc")
-  combat.processed.data.dir <- file.path(postQC.data.dir, "combat_results")
-  
-  #Output directory
-  output.dir <- file.path(main.dir, "output","aatd")
-  
-  #DESEQ DIRECTORY
-  diffexp.dir <- file.path(output.dir, "diffexp_serpina1_deseq_withoutage", "rm_LIB5426585_SAM24375557")
-  if(!exists(diffexp.dir))dir.create(diffexp.dir)
-  
-  #EDGER DIRECTORY
-  # diffexp.dir <- file.path(output.dir, "diffexp_serpina1_edgeR_withoutage")
-  # if(!exists(diffexp.dir))dir.create(diffexp.dir)
-  
-  setwd(file.path(main.dir))
-  
-  # ================================================================================== #
-  ## 6.1. LOAD IN DATA ===============================================================
-  # ================================================================================== #
-  
-  hgnc_symbols_db <- readRDS(file.path(postQC.data.dir,"hgnc_symbols_db.rds"))
-  clinical123_master <- readRDS(file.path(postQC.data.dir,  "master","clinical_sherlock123_master.rds"))
-  colnames(clinical123_master)[which(colnames(clinical123_master) == "serpina1_z_snp_GRCh38_ch14_pos94378610")] <- "serpina1_snp"
-  
-  # Brush SHERLOCK1, 2 and 3 counts
-  clinical_brush <- clinical123_master[which(clinical123_master$sampletype == "Brush"),] 
-  counts123_brush <- read.csv(file.path(combat.processed.data.dir, "sherlock1_2_3_counts_brush_integrated.csv"), check.names = FALSE, row.names = 1) #from SHERLOCK_SOP_integration.R script (copied from  "/groups/umcg-griac/tmp02/projects/SHERLOCK_2025/data/sherlock1_2_3_combat)
-  
-  # Biopsy SHERLOCK 2 and 3 counts
-  clinical_biopt <- clinical123_master[which(clinical123_master$sampletype == "Biopt"),]
-  counts23_biopt <- readRDS(file.path(combat.processed.data.dir, "counts_biopt_combat.rds"))
-  counts23_biopt <- counts23_biopt[,row.names(clinical_biopt)]
   
   # ================================================================================== #
   # 6. GSVA ==========================================================================
   # GSVA of ZZ signature on rest of data (to see if those genes go up in MZ at all)
   # ================================================================================== #
+  
+  cat(paste("Starting 6. GSVA"), format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+  
   library(GSVA)
   library(ggpubr)
   
@@ -995,6 +1025,9 @@
       outliers <- biopt_outliers}
     
     
+    #Remove samples with SS and NA serpina1_genotype_group_clean data and change numbers to letters
+    clinical <- clinical[-which(is.na(clinical$serpina1_genotype_group_clean)),]
+    
     if(disease_group == "general_copd"){
       #Only include COPD samples
       clinical <- clinical[-which(clinical$classification == "Control"),]
@@ -1017,14 +1050,6 @@
       clinical <- clinical[-which(row.names(clinical) %in% outliers),]
     }
     
-    #Remove samples with NA serpina1 snp data and change numbers to letters
-    clinical <- clinical[-which(is.na(clinical$serpina1_snp)),] %>% 
-      mutate(serpina1_snp = recode(
-        serpina1_snp,
-        "0" = "MM",
-        "1" = "MZ",
-        "2" = "ZZ" ))
-    
     #make names valid
     clinical$smoking_status<- make.names(clinical$smoking_status)
     
@@ -1040,25 +1065,16 @@
     
     # Get gene signature set
     tT2 <- listofresults[[sampletype]][["tT2"]] #severe results
-    severe_ZZ_MM_tT2 <- tT2[["ZZ_MM"]]
-    
-    # When including outlier (for ZZ-MM, genes are upregulated only) !!!!!!!!!!!!!!!!! ----------------
-    # severe_ZZ_MM_up <- row.names(severe_ZZ_MM_tT2)[which(severe_ZZ_MM_tT2$Legend == "Upregulated")]
-    # gsva_res <- gsva(as.matrix(counts_vst), 
-    #                  list(severe_ZZ_MM_up)
-    #                  mx.diff = TRUE)
-    # gsva_res <- t(gsva_res) #the results tell us how much the set of genes was represented in each sample. ie. enrichment score of 0.9 is high- meaning the genes of interest showed up alot in sample X - now when we group the samples by copd and non copd, we can see whether certain genes are enriched in samples with or without copd
-    # colnames(gsva_res) <- paste0(sampletype,"_ZZ_MM_Up")
-    # --------------------------------------------------------------------------------- #
+    severe_ZZ.Znull.ZI_vs_MM_tT2 <- tT2[["ZZ.Znull.ZI_vs_MM"]]
     
     #When not including outlier (for ZZ-MM, genes are downregulated only) !!!!!!!!!!!!!!!!! -----------
-    severe_ZZ_MM_down <- row.names(severe_ZZ_MM_tT2)[which(severe_ZZ_MM_tT2$Legend == "Downregulated")]
+    severe_ZZ.Znull.ZI_vs_MM_down <- row.names(severe_ZZ.Znull.ZI_vs_MM_tT2)[which(severe_ZZ.Znull.ZI_vs_MM_tT2$Legend == "Downregulated")]
     gsva_res <- gsva(as.matrix(counts_vst), 
-                     list(severe_ZZ_MM_down), 
+                     list(severe_ZZ.Znull.ZI_vs_MM_down), 
                      mx.diff = TRUE)
     
     gsva_res <- t(gsva_res)
-    colnames(gsva_res) <- paste0(sampletype,"_ZZ_MM_Down")
+    colnames(gsva_res) <- paste0(sampletype,"_ZZ.Znull.ZI_vs_MM_down")
     # --------------------------------------------------------------------------------- #
     boxplot_gsva=cbind(gsva = gsva_res,
                        genotype= as.character(clinical$serpina1_snp),
@@ -1067,13 +1083,13 @@
     boxplot_gsva <- as.data.frame(boxplot_gsva)
     
     
-    my_comparisons <- list(c("MM", "ZZ"),
-                           c("MM", "MZ"),
-                           c("ZZ", "MZ"))
+    my_comparisons <- list(c("MM", "ZZ.Znull.ZI"),
+                           c("MM", " MZ.MI.Mnull.MP393S"),
+                           c("ZZ.Znull.ZI", " MZ.MI.Mnull.MP393S"))
     
     
     
-    x_order <- c("MM", "MZ", "ZZ")
+    x_order <- c("MM", " MZ.MI.Mnull.MP393S", "ZZ.Znull.ZI")
     #make this a loop if there are multiple gene set lists         y = as.numeric(boxplot_gsva[,i]),
     
     gsva_theme <- theme(axis.title = element_text(size = 24),
@@ -1132,16 +1148,18 @@
   
   
   gsva_func(sampletype = "brush", disease_group = "severe_copd")
-  # gsva_func(sampletype = "biopt", disease_group = "severe_copd")
+  gsva_func(sampletype = "biopt", disease_group = "severe_copd")
   
   gsva_func(sampletype = "brush", disease_group =  "general_copd")
-  # gsva_func(sampletype = "biopt", disease_group =  "general_copd")
+  gsva_func(sampletype = "biopt", disease_group =  "general_copd")
   
   
   
   # ================================================================================== #
   # 7. BOXPLOTS ==========================================================================
   # ================================================================================== #
+  library("rstatix")
+  library("ggpubr")
   
   boxplot_func <- function(sampletype, disease_group){
     
@@ -1157,6 +1175,10 @@
       counts <- counts23_biopt
       clinical <- clinical_biopt
       outliers <- biopt_outliers}
+    
+    
+    #Remove samples with NA serpina1 snp data and change numbers to letters
+    clinical <- clinical[-which(is.na(clinical$serpina1_genotype_group_clean)),]
     
     
     if(disease_group == "general_copd"){
@@ -1180,13 +1202,6 @@
       clinical <- clinical[-which(row.names(clinical) %in% outliers),]
     }
     
-    #Remove samples with NA serpina1 snp data and change numbers to letters
-    clinical <- clinical[-which(is.na(clinical$serpina1_snp)),] %>% 
-      mutate(serpina1_snp = recode(
-        serpina1_snp,
-        "0" = "MM",
-        "1" = "MZ",
-        "2" = "ZZ" ))
     
     #make names valid
     clinical$smoking_status<- make.names(clinical$smoking_status)
@@ -1201,14 +1216,16 @@
     
     counts_vst <- assay(vst(dds)) #assay extracts the counts
     
-    # Get top genes 
-    tT2 <- listofresults[[sampletype]][["tT2"]][["ZZ_MM"]] #severe or general results depending on function selection
+
+    for (contrast in names(listofresults[[sampletype]][["tT2"]])){
+      
+    tT2 <- listofresults[[sampletype]][["tT2"]][[contrast]]
     
     
     boxplotdata <- as.data.frame(t(counts_vst))
     
     boxplot <- cbind(boxplotdata,
-                     genotype = as.character(clinical$serpina1_snp),
+                     genotype = as.character(clinical$serpina1_genotype_group_clean),
                      disease = as.character(clinical$classification),
                      age = clinical$age,
                      smoking_status = clinical$smoking_status,
@@ -1223,38 +1240,38 @@
       tT2_genes
     }
     
+    if(length(top10) > 0){
     
-    
-    pdf(file = file.path(boxplot.dir, paste0(disease_group,"_",sampletype, "_boxplot",".pdf")),
-        height = 8,
+    pdf(file = file.path(boxplot.dir, paste0(disease_group,"_",sampletype, "_", contrast, "_boxplot",".pdf")),
+        height = 12,
         width= 6)
     
     cat("Starting plots", disease_group, sampletype, format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
     
-    
-    
-    for (gene in c(top10)){
-      
-      gene_hgnc <- ifelse(is.na(hgnc_symbols_db[gene, "SYMBOL"]),
-                          gene,
-                          hgnc_symbols_db[gene, "SYMBOL"])
       
       
-      plot <- boxplot[,c(gene,
-                         "genotype",
-                         "disease",
-                         "age",
-                         "packyears",
-                         "ics")]
-      
-      
-      plot$Study.ID <- row.names(plot)
-      
-      
-      colnames(plot)[1] <- "gene"
-      
-      plot <- as.data.frame(plot)
-      
+      for (gene in c(top10)){
+        
+        gene_hgnc <- ifelse(is.na(hgnc_symbols_db[gene, "SYMBOL"]),
+                            gene,
+                            hgnc_symbols_db[gene, "SYMBOL"])
+        
+        
+        plot <- boxplot[,c(gene,
+                           "genotype",
+                           "disease",
+                           "age",
+                           "packyears",
+                           "ics")]
+        
+        
+        plot$Study.ID <- row.names(plot)
+        
+        
+        colnames(plot)[1] <- "gene"
+        
+        plot <- as.data.frame(plot)
+        
       
       ## Get P-Values --------------------------------------------------------------------------------------
       
@@ -1274,10 +1291,14 @@
       stat.table3 <- stat.table
       
       
-      stat.table3 <- cbind(stat.table3, resultsname = c("MZ_MM", "ZZ_MM", "ZZ_MZ"))
-      stat.table3[which(stat.table3$resultsname == "MZ_MM"),"p"] <- listofresults[[sampletype]][["tT"]][["MZ_MM"]][gene, "pvalue"]
-      stat.table3[which(stat.table3$resultsname == "ZZ_MM"),"p"] <- listofresults[[sampletype]][["tT"]][["ZZ_MM"]][gene, "pvalue"]
-      stat.table3[which(stat.table3$resultsname == "ZZ_MZ"),"p"] <- listofresults[[sampletype]][["tT"]][["ZZ_MZ"]][gene, "pvalue"]
+      stat.table3 <- cbind(stat.table3, resultsname = c("MS_vs_MM", "MZ_vs_MM", "ZZ_vs_MM","MZ_vs_MS", "ZZ_vs_MS", "ZZ_vs_MZ" ))
+      stat.table3[which(stat.table3$resultsname == "MS_vs_MM"),"p"] <- listofresults[[sampletype]][["tT"]][["MS_vs_MM"]][gene, "pvalue"]
+      stat.table3[which(stat.table3$resultsname == "MZ_vs_MM"),"p"] <- listofresults[[sampletype]][["tT"]][["MZ_vs_MM"]][gene, "pvalue"]
+      stat.table3[which(stat.table3$resultsname == "ZZ_vs_MM"),"p"] <- listofresults[[sampletype]][["tT"]][["ZZ_vs_MM"]][gene, "pvalue"]
+      stat.table3[which(stat.table3$resultsname == "MZ_vs_MS"),"p"] <- listofresults[[sampletype]][["tT"]][["MZ_vs_MS"]][gene, "pvalue"]
+      stat.table3[which(stat.table3$resultsname == "ZZ_vs_MS"),"p"] <- listofresults[[sampletype]][["tT"]][["ZZ_vs_MS"]][gene, "pvalue"]
+      stat.table3[which(stat.table3$resultsname == "ZZ_vs_MZ"),"p"] <- listofresults[[sampletype]][["tT"]][["ZZ_vs_MZ"]][gene, "pvalue"]
+      
       stat.table3$p <- signif(as.numeric(stat.table3$p), digits = 4)
       stat.table3$y.position <- max(plot[,"gene"]) + 0.025*(max(plot[,"gene"]))
       stat.table3$y.position <- as.numeric(stat.table3$y.position)
@@ -1305,11 +1326,11 @@
                     alpha = 0.5,
                     size = 2.5,
                     width = 0.3) +
-        
-        
-        scale_fill_manual(values=c("MM" = "#00BA38" , "MZ" = "#619CFF",
-                                   "ZZ" = "#F8766D")) +
-        
+      
+        # 
+        # scale_fill_manual(values=c("MM" = "#00BA38" , "MZ" = "#619CFF",
+        #                            "ZZ" = "#F8766D")) +
+        # 
         
         scale_color_manual(values=c("Mild-moderate COPD" = "#E68613" , 
                                     "Severe COPD" = "#C77CFF")) +
@@ -1319,13 +1340,13 @@
         
         labs(title = paste(gene_hgnc, "expression in", disease_group, "patients")) +
         ylab (label =  paste(gene_hgnc, "expression")) +
-        xlab (label = paste("AATD Pi Genotype")) +
+        xlab (label = paste("SERPINA1 Genotype")) +
         
         
         stat_pvalue_manual(stat.table3,
                            label = "p",
                            tip.length = 0.01,
-                           bracket.nudge.y = c(0, 0.5, 0),
+                           bracket.nudge.y = c(0, 0.5, 1, 0, 1.5, 0),
                            size = 6)   +
         
         
@@ -1334,13 +1355,16 @@
           alpha = "none"
         ) 
       
+        
+        boxplotpath <- file.path(boxplot.dir, contrast)
+        if(!exists(boxplotpath)) dir.create(boxplotpath)
+        
+        ggsave(boxplotimage,
+               file = file.path(boxplotpath, paste0(disease_group, "_",sampletype, "_",contrast,"_", gene_hgnc, "_boxplot.png")),
+               height = 20, width = 20, units = "cm", dpi = 800)
+        
       
-      ggsave(boxplotimage,
-             file = file.path(boxplot.dir, paste0(sampletype, "_", gene_hgnc, "_boxplot.png")),
-             height = 20, width = 20, units = "cm", dpi = 800)
-      
-      
-      
+      #label with sample id so we can identify outliers
       boxplotimage_labelled <- boxplotimage +
         geom_text_repel(
           aes(label = Study.ID, color = disease),
@@ -1360,16 +1384,19 @@
     } #close loop of top10genes
     
     dev.off()
+    
+    } #close if top10 >0
+    } #close loop of contrasts
   } # close function
   
   
   
   
   boxplot_func(sampletype = "brush", disease_group = "severe_copd")
-  # boxplot_func(sampletype = "biopt", disease_group = "severe_copd")
+  boxplot_func(sampletype = "biopt", disease_group = "severe_copd")
   
   boxplot_func(sampletype = "brush", disease_group =  "general_copd")
-  # boxplot_func(sampletype = "biopt", disease_group =  "general_copd")
+  boxplot_func(sampletype = "biopt", disease_group =  "general_copd")
   
   
   cat("END OF THIS JOB", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
