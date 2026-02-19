@@ -67,9 +67,10 @@ if(!exists(mp.dir)) dir.create(mp.dir)
 # ================================================================================== #
 clinical123_master <- readRDS(file.path(postQC.data.dir,  "master","clinical_sherlock123_master.rds"))
 clinical_brush <- clinical123_master[which(clinical123_master$sampletype == "Brush" & clinical123_master$batch != "1"),] 
+clinical_biopt <- clinical123_master[which(clinical123_master$sampletype == "Biopt" & clinical123_master$batch != "1"),] 
 
-counts_brush <- readRDS(file.path(combat.processed.data.dir, "counts_brush_combat.rds"))
-counts_biopt <- readRDS(file.path(combat.processed.data.dir, "counts_biopt_combat.rds"))
+counts_brush <- readRDS(file.path(combat.processed.data.dir, "counts_brush_combat.rds")) #only includes sherlock2and3
+counts_biopt <- readRDS(file.path(combat.processed.data.dir, "counts_biopt_combat.rds")) #only includes sherlock2and3
 
 hgnc_symbols_db <- readRDS(file.path(postQC.data.dir,"hgnc_symbols_db.rds"))
 
@@ -89,13 +90,25 @@ poly2 <- as.data.frame(read_xlsx("260124 Summary results and plan correlation wi
 setwd(file.path(main.dir))
 
 
-
 # ================================================================================== #
-# 2.2. Diff Exp(define function) ==================================================
+# 2. Diff Exp(define function) ==================================================
 # ================================================================================== #
 
 #### Define DESEQ2 function ####
 diffexp_deseq_func <- function(microplastic) {
+  
+  #batch 1 has polyurethane data, batch 2 has polypropylene
+  microplastic_fullname <- microplastic
+  if (microplastic_fullname == "poly"){
+    
+    if(batch == 1){
+      microplastic_fullname <- "polyurethane"}
+    
+    else if(batch == 2){
+      microplastic_fullname <- "polypropylene"}
+  }
+  
+  cat(paste("Starting 2. Differential expression", microplastic_fullname, sample_type), format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
   
   
   #Make output directory for total_mp or nylon or poly
@@ -120,23 +133,24 @@ diffexp_deseq_func <- function(microplastic) {
     poly <- poly1
     
     #Match up patients
-    #Batch 1 : SEO250, SEO131 and SEO304 only have biopsy sample, not brush
+    #Batch 1 : SEO250, SEO131 and SEO304 only have biopsy sample, not brush.  print sample names that donti ntersect
+    print(paste0("Batch ",batch," samples do not have ", sample_type, " data", paste0(row.names(total_mp)[!row.names(total_mp) %in% clinical$Study.ID], collapse = ",")))
     
     if(microplastic == "total_mp"){
-    matching_patients <- intersect(row.names(total_mp),clinical_brush$Study.ID)
-    clinical <- clinical_brush[match(matching_patients,clinical_brush$Study.ID),] %>% 
+    matching_patients <- intersect(row.names(total_mp),clinical$Study.ID)
+    clinical <- clinical[match(matching_patients,clinical$Study.ID),] %>% 
       mutate(quantity = total_mp[matching_patients,'Total nr. of microplastics']) %>% 
       mutate(exposure = ifelse(quantity < 8.45, "low", "high"))}
     
     if(microplastic == "nylon"){
-    matching_patients <- intersect(row.names(nylon),clinical_brush$Study.ID)
-    clinical <- clinical_brush[match(matching_patients,clinical_brush$Study.ID),] %>% 
+    matching_patients <- intersect(row.names(nylon),clinical$Study.ID)
+    clinical <- clinical[match(matching_patients,clinical$Study.ID),] %>% 
       mutate(quantity = nylon[matching_patients,'Nylon']) %>% 
       mutate(exposure = ifelse(quantity < 22.88, "low", "high"))}
     
     if(microplastic == "poly"){
-    matching_patients <- intersect(row.names(poly),clinical_brush$Study.ID)
-    clinical <- clinical_brush[match(matching_patients,clinical_brush$Study.ID),] %>% 
+    matching_patients <- intersect(row.names(poly),clinical$Study.ID)
+    clinical <- clinical[match(matching_patients,clinical$Study.ID),] %>% 
       mutate(quantity = poly[matching_patients,'Polyurethane']) %>% 
       mutate(exposure = ifelse(quantity < 67.44, "low", "high"))}
     
@@ -152,30 +166,30 @@ diffexp_deseq_func <- function(microplastic) {
     #Match up patients
     if(microplastic == "total_mp"){
       
-      #SEO532 - no expression data
-      matching_patients <- intersect(row.names(total_mp),clinical_brush$Study.ID)
-      clinical <- clinical_brush[match(matching_patients,clinical_brush$Study.ID),] %>% 
+      #SEO532 - no expression data , print sample names that donti ntersect
+      print(paste0("Batch ",batch," samples not in clinical file: ", row.names(total_mp)[!row.names(total_mp) %in% clinical$Study.ID]))
+      matching_patients <- intersect(row.names(total_mp),clinical$Study.ID)
+      clinical <- clinical[match(matching_patients,clinical$Study.ID),] %>% 
         mutate(quantity = total_mp[matching_patients,'Total ng/ml of microplastics']) %>% 
         mutate(exposure = total_mp[matching_patients,'Category'])}
     
     if(microplastic == "nylon"){
-      
-      matching_patients <- intersect(row.names(nylon),clinical_brush$Study.ID)
-      clinical <- clinical_brush[match(matching_patients,clinical_brush$Study.ID),] %>% 
+      matching_patients <- intersect(row.names(nylon),clinical$Study.ID)
+      clinical <- clinical[match(matching_patients,clinical$Study.ID),] %>% 
         mutate(quantity = nylon[matching_patients,'Nylon ng/ml']) %>% 
         mutate(exposure = nylon[matching_patients,'Category'])}
     
     
     if(microplastic == "poly"){
-      matching_patients <- intersect(row.names(poly),clinical_brush$Study.ID)
-      clinical <- clinical_brush[match(matching_patients,clinical_brush$Study.ID),] %>% 
+      matching_patients <- intersect(row.names(poly),clinical$Study.ID)
+      clinical <- clinical[match(matching_patients,clinical$Study.ID),] %>% 
         mutate(quantity = poly[matching_patients,'Polypropylene ng/ml']) %>% 
         mutate(exposure = poly[matching_patients,'Category'])}
     
     clinical$exposure <- tolower(clinical$exposure) #make lowercase to match batch 1
   }
   
-  counts <- counts_brush[,row.names(clinical)]
+  counts <- counts[,row.names(clinical)]
   
 ##### Q1a DGE #####
   
@@ -243,21 +257,12 @@ write.csv(tT, file = file.path(diffexp.results.dir, paste0("batch", batch,"_tT_"
 write.csv(head(tT, n = 100) , file.path(diffexp.results.dir, paste0("batch", batch,"_tT_top100_", microplastic, ".csv")))
 
 
-microplastic_fullname <- microplastic
-if (microplastic_fullname == "poly"){
-  
-  if(batch == 1){
-    microplastic_fullname <- "polyurethane"}
-  
-  else if(batch == 2){
-    microplastic_fullname <- "polypropylene"}
-}
 
 
 # ================================================================================== #
 # 2.1. VOLCANO PLOT ================================================================
 # ================================================================================== #
-cat(paste("Starting 2.1. VOLCANO PLOT", microplastic_fullname), format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+cat(paste("Starting 2.1. VOLCANO PLOT", microplastic_fullname, sample_type), format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
 
 volcano <- ggplot(tT, aes(x = log2FoldChange, y = -log10(pvalue))) +
   ggtitle(paste(microplastic_fullname)) +
@@ -292,6 +297,18 @@ saveRDS(listofresults, file = file.path(diffexp.results.dir, "listofresults.RDS"
 
 boxplot_func <- function(microplastic){
   
+  #batch 1 has polyurethane data, batch 2 has polypropylene
+  microplastic_fullname <- microplastic
+  if (microplastic_fullname == "poly"){
+    
+    if(batch == 1){
+      microplastic_fullname <- "polyurethane"}
+    
+    else if(batch == 2){
+      microplastic_fullname <- "polypropylene"}
+  }
+cat("Starting plots", microplastic_fullname, sample_type, format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+  
   this.mp.dir <- file.path(mp.dir, microplastic)
 diffexp.dir <- file.path(this.mp.dir, "diffexp_deseq")
 diffexp.results.dir <- file.path(diffexp.dir, "results")
@@ -308,20 +325,20 @@ if(batch == 1){ #batch is the index in loop after deseq and boxplot function
   #SEO250, SEO131 and SEO304 only have biopsy sample, not brush
   
   if(microplastic == "total_mp"){
-  matching_patients <- intersect(row.names(total_mp),clinical_brush$Study.ID)
-  clinical<- clinical_brush[match(matching_patients,clinical_brush$Study.ID),] %>% 
+  matching_patients <- intersect(row.names(total_mp),clinical$Study.ID)
+  clinical<- clinical[match(matching_patients,clinical$Study.ID),] %>% 
     mutate(quantity = total_mp[matching_patients,'Total nr. of microplastics']) %>% 
     mutate(exposure = ifelse(quantity < 8.45, "low", "high"))}
   
   if(microplastic == "nylon"){
-  matching_patients <- intersect(row.names(nylon),clinical_brush$Study.ID)
-  clinical <- clinical_brush[match(matching_patients,clinical_brush$Study.ID),] %>% 
+  matching_patients <- intersect(row.names(nylon),clinical$Study.ID)
+  clinical <- clinical[match(matching_patients,clinical$Study.ID),] %>% 
     mutate(quantity = nylon[matching_patients,'Nylon']) %>% 
     mutate(exposure = ifelse(quantity < 22.88, "low", "high"))}
   
   if(microplastic == "poly"){
-  matching_patients <- intersect(row.names(poly),clinical_brush$Study.ID)
-  clinical <- clinical_brush[match(matching_patients,clinical_brush$Study.ID),] %>% 
+  matching_patients <- intersect(row.names(poly),clinical$Study.ID)
+  clinical <- clinical[match(matching_patients,clinical$Study.ID),] %>% 
     mutate(quantity = poly[matching_patients,'Polyurethane']) %>% 
     mutate(exposure = ifelse(quantity < 67.44, "low", "high"))}
   
@@ -338,32 +355,32 @@ if(batch == 2){
   if(microplastic == "total_mp"){
     
     #SEO532 - no expression data
-    matching_patients <- intersect(row.names(total_mp),clinical_brush$Study.ID)
-    clinical <- clinical_brush[match(matching_patients,clinical_brush$Study.ID),] %>% 
+    matching_patients <- intersect(row.names(total_mp),clinical$Study.ID)
+    clinical <- clinical[match(matching_patients,clinical$Study.ID),] %>% 
       mutate(quantity = total_mp[matching_patients,'Total ng/ml of microplastics']) %>% 
       mutate(exposure = total_mp[matching_patients,'Category'])}
   
   if(microplastic == "nylon"){
     
-    matching_patients <- intersect(row.names(nylon),clinical_brush$Study.ID)
-    clinical <- clinical_brush[match(matching_patients,clinical_brush$Study.ID),] %>% 
+    matching_patients <- intersect(row.names(nylon),clinical$Study.ID)
+    clinical <- clinical[match(matching_patients,clinical$Study.ID),] %>% 
       mutate(quantity = nylon[matching_patients,'Nylon ng/ml']) %>% 
       mutate(exposure = nylon[matching_patients,'Category'])}
   
   
   if(microplastic == "poly"){
-    matching_patients <- intersect(row.names(poly),clinical_brush$Study.ID)
-    clinical <- clinical_brush[match(matching_patients,clinical_brush$Study.ID),] %>% 
+    matching_patients <- intersect(row.names(poly),clinical$Study.ID)
+    clinical <- clinical[match(matching_patients,clinical$Study.ID),] %>% 
       mutate(quantity = poly[matching_patients,'Polypropylene ng/ml']) %>% 
       mutate(exposure = poly[matching_patients,'Category'])}
   
   clinical$exposure <- tolower(clinical$exposure) #make lowercase to match batch 1
 }
 
-boxplotcounts <- counts_brush[,row.names(clinical)]
-counts_brush_voom <- voom(boxplotcounts)
+boxplotcounts <- counts[,row.names(clinical)]
+counts_voom <- voom(boxplotcounts)
 
-boxplotdata <- as.data.frame(t(counts_brush_voom$E))
+boxplotdata <- as.data.frame(t(counts_voom$E))
 
 boxplot <- cbind(boxplotdata,
                  quantity = clinical$quantity,
@@ -519,10 +536,26 @@ dev.off()
 # 3. RUN THE FUNCTIONS ================================================================
 # ================================================================================== #
 
-for (batch in 1:2){
+#set sampletype of interest !! brush or biopsy
+for(sample_type in c("Brush", "Biopt")){
+  if(sample_type == "Brush"){
+    clinical <- clinical_brush
+    counts <- counts_brush
+  }
   
-  mp.dir <- file.path(output.dir, "microplastics", paste0("data_batch", batch))
-  if(!exists(mp.dir)) dir.create(mp.dir)
+  if(sample_type == "Biopt"){
+    clinical <- clinical_biopt
+    counts <- counts_biopt
+  }
+  
+  print(sample_type)
+  
+  
+  
+  for (batch in 1:2){
+  
+  mp.dir <- file.path(output.dir, "microplastics", paste0("data_batch", batch), sample_type)
+  if(!exists(mp.dir)) dir.create(mp.dir, recursive = TRUE)
 
   diffexp_deseq_func(microplastic = "total_mp")
   diffexp_deseq_func(microplastic = "nylon")
@@ -531,14 +564,271 @@ for (batch in 1:2){
   boxplot_func(microplastic = "total_mp")
   boxplot_func(microplastic = "nylon")
   boxplot_func(microplastic = "poly")
-
-} # close batch loop
-
+  } # close batch loop
+} #close sample_type  loop
 
 cat("END OF THIS JOB", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
 stop()
 
 
+# ================================================================================== #
+# 4. CELLULAR DECONVLUTION =========================================================
+# ================================================================================== #
+
+# Mixture/Count Matrix - CPM normalise
+counts <- readRDS(file.path(combat.processed.data.dir, "counts_combat.rds"))
+clinical<- readRDS(file.path(postQC.data.dir, "clinical_brushbiopt_simple.rds")) #552 samples
+hgnc_symbols_db <- readRDS(file.path(postQC.data.dir,"hgnc_symbols_db.rds"))
+
+expression_cpm <- cpm(counts)
+expression_cpm <- expression_cpm[hgnc_symbols_db$GENEID,] #552 samples
+
+hidesample <- as.data.frame(cbind(colnames(expression_cpm), seq(1:ncol(expression_cpm))))
+colnames(expression_cpm) <- hidesample$V2
+
+
+## RUN CIBERSORT with ref1_sigmatrix from fia (from Nov 2024, "ref1_1_1411") - check if there is a new one - this is for bronchial
+## 1. Create signature matrix was done already - created Ref1_sigmatrix
+## Go to 2. Impute cell fractions
+## Batch correction, S-mode, 100 permutations
+## refmatrix = Ref_1_1411 (single cell reference matrix)
+## sigmatrix = Ref1_sigmatrix (signature matrix)
+## mixture = expression_cpm
+
+
+#Upload results from cibersort (results.txt) to processed data folder and run
+cibersort_results <- read.delim(file.path(data.dir, "processed", "celldecon", "results_20251114.txt"))
+row.names(cibersort_results) <- hidesample$V1
+cibersort_results <- cibersort_results[,-1]
+
+row.names(cibersort_results) == rownames(clinical)
+cibersort_results <- cibersort_results[row.names(clinical),]
+
+clinical_celldecon_all <- as.data.frame(cbind(clinical,cibersort_results))
+
+
+# #split into biopt and brush
+## Cell Decon vs Exposure Plot --------------------------------------------------------------------------------------
+
+  #### Define DESEQ2 function ####
+  celldecon_func <- function(microplastic) {
+    
+    clinical_celldecon <- clinical_celldecon_all[which(clinical_celldecon_all$sampletype == sample_type),]
+    
+    #batch 1 has polyurethane data, batch 2 has polypropylene
+    microplastic_fullname <- microplastic
+    if (microplastic_fullname == "poly"){
+      
+      if(batch == 1){
+        microplastic_fullname <- "polyurethane"}
+      
+      else if(batch == 2){
+        microplastic_fullname <- "polypropylene"}
+    }
+    
+    cat(paste("Starting 4. Cell Decon", microplastic_fullname, sample_type), format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+    
+    
+    #Make output directory for total_mp or nylon or poly
+    this.mp.dir <- file.path(mp.dir, microplastic)
+    if(!exists(this.mp.dir)) dir.create(this.mp.dir, recursive = TRUE)
+    
+    celldecon.dir <- file.path(this.mp.dir, "cell_decon")
+    if(!exists(celldecon.dir)) dir.create(celldecon.dir, recursive = TRUE)
+    
+    celldecon.results.dir <- file.path(celldecon.dir, "results")
+    if(!exists(celldecon.results.dir)) dir.create(celldecon.results.dir, recursive = TRUE)
+    
+    celldecon.figures.dir <- file.path(celldecon.dir, "figures")
+    if(!exists(celldecon.figures.dir)) dir.create(celldecon.figures.dir, recursive = TRUE)
+    
+    
+  if(batch == 1){ #batch is the index in loop after deseq and boxplot function
+    total_mp <- total_mp1
+    nylon <- nylon1
+    poly <- poly1
+    
+    #Match up patients
+    #Batch 1 : SEO250, SEO131 and SEO304 only have biopsy sample, not brush.  print sample names that donti ntersect
+    print(paste0("Batch ",batch," samples do not have ", sample_type, " data", paste0(row.names(total_mp)[!row.names(total_mp) %in% clinical_celldecon$Study.ID], collapse = ",")))
+    
+    if(microplastic == "total_mp"){
+      matching_patients <- intersect(row.names(total_mp),clinical_celldecon$Study.ID)
+      clinical_celldecon <- clinical_celldecon[match(matching_patients,clinical_celldecon$Study.ID),] %>% 
+        mutate(quantity = total_mp[matching_patients,'Total nr. of microplastics']) %>% 
+        mutate(exposure = ifelse(quantity < 8.45, "low", "high"))}
+    
+    if(microplastic == "nylon"){
+      matching_patients <- intersect(row.names(nylon),clinical_celldecon$Study.ID)
+      clinical_celldecon <- clinical_celldecon[match(matching_patients,clinical_celldecon$Study.ID),] %>% 
+        mutate(quantity = nylon[matching_patients,'Nylon']) %>% 
+        mutate(exposure = ifelse(quantity < 22.88, "low", "high"))}
+    
+    if(microplastic == "poly"){
+      matching_patients <- intersect(row.names(poly),clinical_celldecon$Study.ID)
+      clinical_celldecon <- clinical_celldecon[match(matching_patients,clinical_celldecon$Study.ID),] %>% 
+        mutate(quantity = poly[matching_patients,'Polyurethane']) %>% 
+        mutate(exposure = ifelse(quantity < 67.44, "low", "high"))}
+    
+  }
+  
+  
+  if(batch == 2){
+    total_mp <- total_mp2
+    nylon <- nylon2
+    poly <- poly2
+    
+    
+    #Match up patients
+    if(microplastic == "total_mp"){
+      
+      #SEO532 - no expression data , print sample names that donti ntersect
+      print(paste0("Batch ",batch," samples do not have ", sample_type, " data", paste0(row.names(total_mp)[!row.names(total_mp) %in% clinical_celldecon$Study.ID], collapse = ",")))
+            matching_patients <- intersect(row.names(total_mp),clinical_celldecon$Study.ID)
+      clinical_celldecon <- clinical_celldecon[match(matching_patients,clinical_celldecon$Study.ID),] %>% 
+        mutate(quantity = total_mp[matching_patients,'Total ng/ml of microplastics']) %>% 
+        mutate(exposure = total_mp[matching_patients,'Category'])}
+    
+    if(microplastic == "nylon"){
+      matching_patients <- intersect(row.names(nylon),clinical_celldecon$Study.ID)
+      clinical_celldecon <- clinical_celldecon[match(matching_patients,clinical_celldecon$Study.ID),] %>% 
+        mutate(quantity = nylon[matching_patients,'Nylon ng/ml']) %>% 
+        mutate(exposure = nylon[matching_patients,'Category'])}
+    
+    
+    if(microplastic == "poly"){
+      matching_patients <- intersect(row.names(poly),clinical_celldecon$Study.ID)
+      clinical_celldecon <- clinical_celldecon[match(matching_patients,clinical_celldecon$Study.ID),] %>% 
+        mutate(quantity = poly[matching_patients,'Polypropylene ng/ml']) %>% 
+        mutate(exposure = poly[matching_patients,'Category'])}
+    
+    clinical_celldecon$exposure <- tolower(clinical_celldecon$exposure) #make lowercase to match batch 1
+  }
+  
+  row.names(clinical_celldecon) <- clinical_celldecon$Study.ID
+boxplot_celldecon= cbind(id = row.names(clinical_celldecon),
+                         sampletype = clinical_celldecon$sampletype,
+                         classification = clinical_celldecon$classification,
+                         clinical_celldecon[,which(colnames(clinical_celldecon) == "Alveolar.macrophages"):ncol(clinical_celldecon)])
+
+
+
+boxplot_celldecon <- as.data.frame(boxplot_celldecon)
+
+boxplot_celldecon_long <- pivot_longer(boxplot_celldecon, cols = 4:21)
+
+ciber <-boxplot_celldecon_long
+colnames(ciber)[9] <- "celltype"
+colnames(ciber)[10] <- "proportion"
+
+
+write.csv(ciber,file.path(celldecon.results.dir,paste0(microplastic,"_batch",batch,"_",sample_type, "celldecon_ciber.csv")))
+
+#Normality test
+# ggqqplot(residuals(lm(proportion ~ classification, data = ciber_biopt)))
+
+### Get P Values --------------------------------------------------------------------------------
+#Step 1) Get list of comparisons
+celldecon_stats <- ciber %>%
+  group_by(celltype) %>%
+  wilcox_test(proportion ~ exposure,
+              paired = FALSE
+              # p.adjust.method = "BH" #dont need if we're just testing high vs low (one comparison per cell type group)
+              )%>%
+  add_significance("p") %>% 
+  add_xy_position(x = "celltype")
+
+
+#Manually change y positions because right now they are unecessarily staggered
+#Don't want all the p-value brackets to be adjacent in the plot because the boxplots that are far down are then very far from the brackets up top
+#Get max proportion for each cell type and stagger the brackets for each cell type
+maxRows <- by(data = ciber, INDICES = ciber$celltype, FUN = function(X) {X[which.max(X$proportion),]})
+#by() applies a funcion to subsets of a dataframe, grouped by a factor or variable (in this case cell type)
+#celltype is the grouping factor, for each unique celltype, the function will be executed
+#function(X) defines a function that is applied to every susbet of data (here, X is all rows corresponding to a specific celltype), those rows become X and the function looks for the max proportion in X
+max_per_celltype <- as.data.frame(do.call("rbind", maxRows))
+
+celldecon_stats$y.position <- as.numeric(max_per_celltype[match(celldecon_stats$celltype, max_per_celltype$celltype), "proportion"])
+celldecon_stats$y.position <- celldecon_stats$y.position + (celldecon_stats$y.position)*0.05
+
+celldecon_stats$contrast <- paste0(celldecon_stats$group1, "_" ,celldecon_stats$group2)
+
+celldecon_stats <- as.data.frame(celldecon_stats)
+
+#Only label the significant comparisons
+celldecon_stats2 <- celldecon_stats[which(celldecon_stats$p.adj.signif != "ns"),]
+
+png(file.path(celldecon.figures.dir,paste0(microplastic,"_batch",batch,"_",sample_type, "_celldecon_ciber.png")), width = 60, height = 30, units = "cm",res = 1200)
+
+ggplot(ciber,
+       aes(x=celltype,
+           y=proportion))+
+  geom_boxplot(aes(fill=exposure))+ #have to put fill here, because if we put it in the ggplot() aes, it becomes a global aes and needs 'exposure' in each subsequent step. theres no 'exposure' column in celldecon_stats so it doesnt work if its global
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        panel.background = element_rect(fill = "white",
+                                        colour = "white",
+                                        size = 0.5,
+                                        linetype = "solid"),
+        panel.grid.major = element_line(size = 0.5, linetype = 'solid',
+                                        colour =  "white"),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line(size = 0.5, linetype = "solid",
+                                 colour = "grey"),
+        axis.text = element_text(size = 18),
+        axis.title = element_text(size = 18),
+        plot.title = element_text(size = 18),
+        legend.text = element_text(size = 18),
+        legend.title = element_text(size = 18),
+        plot.margin = margin(0,0,1,2, "cm"))+
+  
+  stat_pvalue_manual(celldecon_stats2,
+                     label = "p.signif",
+                     tip.length = 0.01,
+                     # bracket.nudge.y =  c(0, 0.2, 0, 0.2),
+                     #  bracket.shorten = 0.1,
+                     size = 3)+
+  scale_fill_manual(values=c("low" = "#619CFF" ,
+                             "high" = "#F8766D")) +
+  
+  xlab("Cell Type") +
+  ylab("Proportion")+
+  labs(fill = paste(sample_type, ":",microplastic,"Exposure"))+
+  
+  # stat_compare_means(aes(group = classification),
+  #                    comparisons = my_comparisons,
+  #                    method = "wilcox.test")+
+  
+  ggtitle(paste0("Cellular Proportions (",sample_type,")"))
+
+dev.off()
+  } #close cell decon function
+
+
+
+
+# ================================================================================== #
+# 4.1 RUN THE FUNCTIONS ================================================================
+# ================================================================================== #
+
+
+for(sample_type in c("Brush", "Biopt")){
+  print(sample_type)
+  
+for (batch in 1:2){
+  
+  mp.dir <- file.path(output.dir, "microplastics", paste0("data_batch", batch), sample_type)
+  if(!exists(mp.dir)) dir.create(mp.dir, recursive = TRUE)
+  
+  celldecon_func(microplastic = "total_mp")
+  celldecon_func(microplastic = "nylon")
+  celldecon_func(microplastic = "poly")
+  
+} # close batch loop
+  } #close sampletype  loop
+
+
+
+cat("END OF THIS JOB", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
 
 
 # #### edgeR ####
@@ -575,7 +865,7 @@ stop()
 #   clinical <- clinical_poly}
 #   
 #   
-#   counts <- counts_brush[,row.names(clinical)]
+#   counts <- counts[,row.names(clinical)]
 #   
 # 
 # 
