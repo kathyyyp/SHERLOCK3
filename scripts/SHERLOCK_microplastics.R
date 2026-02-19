@@ -7,14 +7,14 @@
 # Project with Daan & Barbro Melgert measuring the levels of specific microplastic particles in bronchial wash samples of the Sherlock study.
 # Aim: see if their results are correlated with specific gene expression signals (differential gene expression analyses with the RNA-seq data from the bronchial brushes)
 
-# November 2025 
+# November 2025 (Batch 1)
 # "In the attached file you will find the SEO numbers of the subjects in which microplastics were measured and the results of the microplastics measurements.
 # Here you will find 3 tables with subjects listed in green and subjects listed in orange, can you perform a differential gene expression analysis between the green and orange subjects (3 different analyses for the 3 different tables).
 # I know the power will probably be too low to generate genome-wide significant hits, but we would still like to see the table with the results.
 # Could you send the excel file with results for all genes?"
 
 
-# 03/02/2026
+# 03/02/2026 (Batch 2)
 # Daan sent 260124 Summary results and plan correlation with RNAseq signatures PyGCMS
 # "we just received new microplastic data. These were generated using a different method to quantify microplastics.
 # Kathy, would you be able to also run the same analyses with these microplastic data (See attached).
@@ -120,7 +120,7 @@ diffexp_deseq_func <- function(microplastic) {
     poly <- poly1
     
     #Match up patients
-    #SEO250, SEO131 and SEO304 only have biopsy sample, not brush
+    #Batch 1 : SEO250, SEO131 and SEO304 only have biopsy sample, not brush
     
     if(microplastic == "total_mp"){
     matching_patients <- intersect(row.names(total_mp),clinical_brush$Study.ID)
@@ -183,7 +183,7 @@ if(batch == 2 && microplastic == nylon){
   
   dds <- DESeqDataSetFromMatrix(countData = counts,
                                 colData = clinical,
-                                design = ~ 0 + exposure + age + smoking_status) # all are males, no sex correction
+                                design = ~ 0 + exposure + age + smoking_status) # all are high sampples are males, no sex correction
   } else{
 
     dds <- DESeqDataSetFromMatrix(countData = counts,
@@ -523,11 +523,11 @@ for (batch in 1:2){
   
   mp.dir <- file.path(output.dir, "microplastics", paste0("data_batch", batch))
   if(!exists(mp.dir)) dir.create(mp.dir)
-  
+
   diffexp_deseq_func(microplastic = "total_mp")
   diffexp_deseq_func(microplastic = "nylon")
   diffexp_deseq_func(microplastic = "poly")
-  
+
   boxplot_func(microplastic = "total_mp")
   boxplot_func(microplastic = "nylon")
   boxplot_func(microplastic = "poly")
@@ -674,54 +674,3 @@ stop()
 # diffexp_edgeR(microplastic = "total_mp")
 # diffexp_edgeR(microplastic = "nylon")
 # diffexp_edgeR(microplastic = "poly")
-
-
-
-
-
-
-
-# ================================================================================== #
-# 2.2. HEATMAP PLOT ================================================================
-# ================================================================================== #
-x <- nameconvert[which(nameconvert$contrast == input$comparison2),1]
-
-tT <- listofresults[[x]]
-selection <-which((tT$logFC>1|tT$logFC< -1)& tT$BHAdjPValue<0.05)
-
-tT2=tT[selection,]
-
-expressionheatmap=as.matrix(voom(expression_symbols))
-colnames(expressionheatmap)=row.names(Sample)
-Sample_ordered=Sample[order(Sample$Time),]
-Sample_ordered=Sample_ordered[order(Sample_ordered$Temp),]
-Sample_ordered=Sample_ordered[order(Sample_ordered$Virus),]
-
-Temp=as.character(Sample_ordered$Temp)
-Temp[Temp==33]="pink"
-Temp[Temp==37]="red"
-
-Virus=as.character(Sample_ordered$Virus)
-Virus[Virus=="MOCK"]="yellow"
-Virus[Virus=="Omicron"]="black"
-Virus[Virus=="OC43"]="orange"
-Virus[Virus=="SARS2"]="blue"
-
-Time=as.character(Sample_ordered$Time)
-Time[Time==12]="lightgrey"
-Time[Time==24]="lightgreen"
-Time[Time==48]="green"
-Time[Time==72]="darkgreen"
-
-clabs=cbind(Temp,Virus,Time)
-
-arrayselectionheatmap = as.matrix(expressionheatmap[row.names(tT2),row.names(Sample_ordered)])
-heatmapplot <- heatmap3(arrayselectionheatmap, Colv=NA, labRow=row.names(arrayselectionheatmap), 
-                        balanceColor=T, labCol=NA, 
-                        showColDendro = F, showRowDendro = F,
-                        ColSideLabs = F, ColSideColors =clabs, cexRow=1.25, 
-                        legendfun=function() showLegend(legend=c("MOCK","Omicron","OC43", "SARS2", "12hrs", "24hrs", "48hrs", "72hrs", "33°C", "37°C"),
-                                                        col=c("yellow","black","orange", "blue","lightgrey", "lightgreen", "green", "darkgreen","pink", "red"),
-                                                        cex=1.5))
-
-print(heatmapplot)
